@@ -463,6 +463,20 @@ function mxShowcaseV5TopUp(r) {
   r.updated = at(2);
 }
 
+/* ── v5 read again (20 Oct, later): the data cap became a long rewrite ──
+   Browsers that already had v5 get the new text and its playbook round. Answers given to its
+   deviations are cleared with the comments they made, since they were made against the old text. */
+function mxShowcaseV5Refresh(r) {
+  const d1 = r?.documents?.find(x => x.id === 'd1'), v5 = d1?.versions[4];
+  if (!v5 || v5.name !== 'Brightwell’s second redline' || d1.versions.length !== 5) return;
+  const fresh = mxShowcase(r.id).documents.find(x => x.id === 'd1')?.versions[4]; if (!fresh) return;
+  v5.blocks = fresh.blocks; delete v5.edited;
+  const made = new Set(Object.values(r.devDec || {}).map(k => k.cid).filter(Boolean));
+  if (r.wcomments?.items) r.wcomments.items = r.wcomments.items.filter(c => !made.has(c.id));
+  delete r.devDec;
+  const list = r.rounds?.docs?.d1; if (list) { const i = list.findIndex(x => x.v === 5); if (i >= 0) list[i] = JSON.parse(JSON.stringify(MX_ROUND_V5)); }
+}
+
 /* run from mxIntake each time: the comment threads are registered under each request's number, then
    (once per browser, behind d.demoV: 2 since the mentions were fixed) the two Gulf Systems requests are told in full */
 function mxDemoSeed(d) {
@@ -472,6 +486,7 @@ function mxDemoSeed(d) {
   if (nda) MX_WCOMMENTS[nda.id] = MX_WCOMMENTS['gulf-nda'];
   if (letter) MX_WCOMMENTS[letter.id] = MX_WCOMMENTS['gulf-letter'];
   if (!d.devV) { mxShowcaseV5TopUp(list.find(q => q.id === d.showcaseId)); d.devV = 1; save(); }
+  if (d.devV === 1) { mxShowcaseV5Refresh(list.find(q => q.id === d.showcaseId)); d.devV = 2; save(); }
   if (d.demoV === 3) return;
   for (const [r, k, fill] of [[nda, 'gulf-nda', mxGulfNda], [letter, 'gulf-letter', mxGulfLetter]]) {
     if (!r) continue;

@@ -1128,7 +1128,7 @@ function mxRoundPage(r, docId) {
       const topic = (t) => mxPlain(t).replace(/^\s*\d+\.\s*/, '').trim();
       const x = dv.items.find(it => topic(it.clause) === topic(c.heading)); if (!x || mxDevDec(r)[x.id]) return null;
       return { html: MX_TAB_ICONS.deviations,
-        tip: x.kind === 'reversal' ? `Reversal: ${x.was} was agreed in v${x.agreed}` : `${MX_DEV_KIND[x.kind]}: ${x.was}`,
+        tip: `${MX_DEV_KIND[x.kind]}: ${x.head}`,
         run: () => { MX.intake.round = null; MX.intake.roundTab = null; MX.intake.swap = true; MX.intake.devFocus = x.id; state.rqCmtPanel = true; state.rqPane = 'devs'; save();
           MX.intake.tab = 'docs'; MX.intake.focus = { doc: d.id, v: dv.v }; go('intake'); } };
     },
@@ -3990,19 +3990,19 @@ function intakePage(r, opts = {}) {
     const c = { id: 'wc' + Date.now().toString(36), doc: d.id, v: dv.v, clause: x.clause, quote: redline ? x.back : x.quote, by: USER.name, to: null, text, when: mxNow(), status: 'open', thread: [] };
     mxWComments(r).push(c);
     mxDevDec(r)[x.id] = { d: 'push', redline, cid: c.id, by: USER.name, at: mxNow() };
-    mxLog(r, { ev: 'event', what: `pushed back on ${x.term.toLowerCase()} in v${dv.v}${redline ? `: ${x.was} is back as a redline, with a comment for ${cp}` : `, with a comment for ${cp}`}`, ref: { doc: d.id, v: dv.v } });
+    mxLog(r, { ev: 'event', what: `pushed back on ${x.term.toLowerCase()} in v${dv.v}${redline ? `: the v${dv.v - 1} wording is back as a redline, with a comment for ${cp}` : `, with a comment for ${cp}`}`, ref: { doc: d.id, v: dv.v } });
     devPush = null; r.updated = mxNow(); save();
     if (vi === dv.v - 1) inPlace(); else paintDPanel();
     paintCmtN();
-    pbToast(redline ? `Pushed back. ${x.was} is back in v${dv.v} as your redline.` : 'Pushed back, with a comment.', { label: 'Undo', run: () => undoDev(x) });
+    pbToast(redline ? `Pushed back. The v${dv.v - 1} wording is back in v${dv.v} as your redline.` : 'Pushed back, with a comment.', { label: 'Undo', run: () => undoDev(x) });
   };
   const acceptDev = (x) => {
     const [d, dv] = devVer();
     mxDevDec(r)[x.id] = { d: 'accept', by: USER.name, at: mxNow() };
-    mxLog(r, { ev: 'event', what: `accepted ${cpWord()}’s change to ${x.term.toLowerCase()} in v${dv.v}: ${x.now} is now agreed`, ref: { doc: d.id, v: dv.v } });
+    mxLog(r, { ev: 'event', what: `accepted ${cpWord()}’s change to ${x.term.toLowerCase()} in v${dv.v}`, ref: { doc: d.id, v: dv.v } });
     r.updated = mxNow(); save();
     paintDPanel(); markDevs(); paintDevN();
-    pbToast(`Accepted. ${x.now} is now the agreed position.`, { label: 'Undo', run: () => undoDev(x) });
+    pbToast(`Accepted. ${cpWord()}’s v${dv.v} wording is now agreed.`, { label: 'Undo', run: () => undoDev(x) });
   };
   /* undo takes back exactly what the answer did: our redline out of their version, and the comment it made */
   const undoDev = (x) => {
@@ -4015,52 +4015,124 @@ function intakePage(r, opts = {}) {
     if (vi === dv.v - 1) inPlace(); else paintDPanel();
     paintCmtN();
   };
+  /* ── the clause through the versions: its words in each, as that side left them ──
+     Read from the versions themselves (each one's marks taken) and compared word by word
+     with the one before, so a changed number and a rewritten paragraph read the same way.
+     Their version is read as they sent it, even once our redline has gone into it; our
+     redline, still to send, is the newest. The first version is the words that later move,
+     shown plain. */
+  const devWhole = new Set();
+  const devBox = document.createElement('div');
+  const devClean = (html) => { devBox.innerHTML = html; devBox.querySelectorAll('del').forEach(n => n.remove()); return devBox.textContent.replace(/\s+/g, ' ').trim(); };
+  /* word by word, as Compare does, with two fixes for reading a clause: a full stop or comma is its own word
+     (so "(£3,000,000)." and "(£3,000,000) per claim" share the figure), and changes kept apart by a word
+     or two read as one phrase replaced ("courts of England and Wales" → "Court of Session in Edinburgh") */
+  const devDiff = (a, b) => {
+    const sep = (t) => t.replace(/([^\s])([.,;:])(?=\s|$)/g, '$1\u2009$2');
+    const ops = mxWordDiff(sep(a), sep(b)).map(([kk, t]) => [kk, t.replace(/\u2009/g, '')]).filter(([, t]) => t);
+    const out = []; let g = null;
+    /* the separator taken out can leave a change touching the word before or after it: put the space back */
+    const word = /^[\w(£$“"'‘]/;
+    const flush = () => { if (!g) return; const dd = g.del.join(' '), nn = g.ins.join(' '), last = out[out.length - 1];
+      if (last && last[0] === 'eq' && !/\s$/.test(last[1]) && word.test(dd || nn)) out.push(['eq', ' ']);
+      if (dd) out.push(['del', dd]); if (dd && nn) out.push(['eq', ' ']); if (nn) out.push(['ins', nn]); g = null; };
+    ops.forEach(([kk, t], i) => {
+      if (kk !== 'eq') { (g ||= { del: [], ins: [] })[kk].push(t.trim()); return; }
+      const next = ops[i + 1], words = t.trim() ? t.trim().split(/\s+/) : [];
+      if (g && next && next[0] !== 'eq' && words.length <= 2 && !/[.;:]$/.test(t.trim())) { if (words.length) { g.del.push(...words); g.ins.push(...words); } return; }
+      flush(); if (out.length && out[out.length - 1][0] !== 'eq' && word.test(t)) out.push(['eq', ' ']); out.push([kk, t]);
+    });
+    flush();
+    return out;
+  };
+  const devThread = (x, d, dv) => {
+    const k = mxDevDec(r)[x.id], redlined = k?.d === 'push' && k.redline;
+    const paraIn = (v, unredline) => {
+      for (const b of d.versions[v - 1]?.blocks || []) {
+        if (b.t !== 'p') continue;
+        const t = devClean(unredline ? x.edits.reduce((s2, [th, ou]) => s2.replace(ou, th), b.v) : b.v);
+        /* only the sentence the deviation is about, so other edits in the same paragraph stay out of it */
+        if (t.includes(x.para)) return (x.sent && t.split(/(?<=[.;])\s+(?=[A-Z])/).find(q => q.includes(x.sent))) || t;
+      }
+      return '';
+    };
+    const rows = [];
+    for (let v = dv.from || 2; v <= dv.v; v++) {
+      const t = paraIn(v, v === dv.v && redlined), p = rows[rows.length - 1];
+      rows.push({ v, t, same: !!p && p.t === t, ops: p ? devDiff(p.t, t) : null });
+    }
+    /* the first version: plain, with the words that later move picked out */
+    const base = (ops) => { const out = [];
+      ops.forEach(([kk, t], i) => {
+        if (kk === 'ins' || (kk === 'eq' && /^\s+$/.test(t) && ops[i - 1]?.[0] === 'del' && ops[i + 1]?.[0] === 'ins')) return;
+        out.push([kk === 'del' ? 'hit' : 'eq', kk === 'eq' && ops[i - 1]?.[0] === 'ins' && /\s$/.test(out[out.length - 1]?.[1] || '') ? t.replace(/^\s+/, '') : t]);
+      });
+      return out.filter(([, t]) => t); };
+    const later = rows.find(w => !w.same && w !== rows[0]);
+    rows[0].ops = later ? base(devDiff(rows[0].t, later.t)) : [['eq', rows[0].t]];
+    if (redlined) { const t = paraIn(dv.v, false); rows.push({ v: d.versions.length + 1, next: true, t, ops: devDiff(rows[rows.length - 1].t, t) }); }
+    return rows;
+  };
+  /* the words around a change, cut with … so a long clause shows only the part that moved */
+  const devMark = (kk, t) => kk === 'eq' ? mxEsc(t) : kk === 'hit' ? `<span class="dv-hit">${mxEsc(t)}</span>` : `<${kk}>${mxEsc(t)}</${kk}>`;
+  const devClip = (ops) => {
+    if (!ops.some(([kk]) => kk !== 'eq')) { const t = ops.map(([, t2]) => t2).join(''); return mxEsc(t.length > 180 ? t.slice(0, 180).replace(/\s\S*$/, '') + '…' : t); }
+    return ops.map(([kk, t], i) => {
+      if (kk !== 'eq') return devMark(kk, t);
+      if (i === 0 && t.length > 80) return '…' + mxEsc(t.slice(-80).replace(/^\S*\s/, ''));
+      if (i === ops.length - 1 && t.length > 80) return mxEsc(t.slice(0, 80).replace(/\s\S*$/, '')) + '…';
+      if (t.length > 160) return mxEsc(t.slice(0, 70).replace(/\s\S*$/, '')) + ' … ' + mxEsc(t.slice(-70).replace(/^\S*\s/, ''));
+      return mxEsc(t);
+    }).join('');
+  };
+  const devFull = (ops) => ops.map(([kk, t]) => devMark(kk, t)).join('');
+  const BIC = {
+    mail: '<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4 7 8 6 8-6"/>',
+  };
   const paintDPanel = () => {
     const d = docs[di]; if (!d || !cpanel) return;
     const dv = mxDevOf(r, d.id), items = dv?.items || [], dec = mxDevDec(r), cp = cpWord(), ver = dv && d.versions[dv.v - 1];
     /* no statuses here (20 Oct): a deviation is answered inside its card, and the list stays in clause order */
     const shown = [...items].sort((a, b) => parseInt(a.clause) - parseInt(b.clause));
-    const BIC = {
-      thread: '<path d="M7 3.5h6.5L18 8v11a1.5 1.5 0 0 1-1.5 1.5h-9.5A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z"/><path d="M13 3.5V8.5h5"/>',
-      mail: '<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4 7 8 6 8-6"/>',
-      prior: '<path d="M7 3.5h10A1.5 1.5 0 0 1 18.5 5v14a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z"/><path d="M9 8.5h6M9 12h6M9 15.5h3.5"/>',
-      precedent: '<rect x="4" y="7.5" width="12" height="13" rx="1.5"/><path d="M8 4.5h10.5A1.5 1.5 0 0 1 20 6v11.5"/>',
-    };
     const fill = (t, x) => {
-      const mail = x.basis.find(b => b[0] === 'mail'), a = mail && actOf(mail[2]);
+      const mail = x.basis?.find(b => b[0] === 'mail'), a = mail && actOf(mail[2]);
       return t.replace('{agreed}', longDay(d.versions[x.agreed - 1].when)).replace('{mail}', a ? longDay(a.when) : 'email');
     };
     const card = (x) => {
-      const on = devFocus === x.id, k = dec[x.id];
+      const on = devFocus === x.id, k = dec[x.id], rows = devThread(x, d, dv);
+      const theirs = rows.find(w => w.v === dv.v && !w.next);
       /* what kind of deviation, in words on the faint line (no coloured tags): the proof sits with it */
-      const sub = x.kind === 'reversal' ? `Reversal · agreed in v${x.agreed}, ${devDay(d.versions[x.agreed - 1].when)}` : x.kind === 'prior' ? `Past contract · their 2025 pilot says ${x.was}` : `Precedent · your signed MSAs say ${x.was}`;
+      /* a past contract or a precedent is named, not quoted: the document is where to read it */
+      const sub = x.kind === 'reversal' ? `Reversal · agreed in v${x.agreed}, ${devDay(d.versions[x.agreed - 1].when)}` : `${MX_DEV_KIND[x.kind]} · ${x.source}`;
       const head = [
         h('div', { class: 'dv-top' }, h('span', { class: 'dv-cl' }, x.clause)),
-        h('div', { class: 'dv-t' }, x.term),
-        h('div', { class: 'dv-move' }, h('span', { class: 'dv-was' }, x.was), h('span', { class: 'dv-arr', html: ICON('<path d="M5 12h14M13 6l6 6-6 6"/>', 12) }), h('span', { class: 'dv-now' }, x.now)),
+        h('div', { class: 'dv-t' }, x.head),
+        /* closed: their change itself, as a redline, cut to the words around it — a number or a paragraph take the same room */
+        on ? null : h('div', { class: 'dv-ex', html: devClip(theirs.ops) }),
         h('div', { class: 'dv-sub' }, sub)];
       const cls = 'wd-card dv-card' + (on ? ' is-on' : '') + (k ? ' is-done' : '');
       if (!on) return h('div', { class: cls, tabindex: '0', role: 'button', 'data-did': x.id, onclick: () => focusDev(x),
         onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); focusDev(x); } } }, ...head);
-      /* how the point moved: every version that touched it, in one line of time, the version it closed in marked */
-      const trail = h('div', { class: 'dv-sec' },
-        h('div', { class: 'dv-trail' }, ...x.trail.map(([v, said]) => {
-          const vv = d.versions[v - 1], agreed = v === x.agreed, now = v === dv.v;
-          return h('button', { class: 'dv-step' + (agreed ? ' is-agreed' : '') + (now ? ' is-now' : '') + (vi === v - 1 ? ' is-here' : ''), type: 'button', 'data-tip': `Open v${v}, ${vv.name}`,
-            onclick: (e) => { e.stopPropagation(); vi = v - 1; paintDoc(); } },
-            h('span', { class: 'dv-dot' }), h('span', { class: 'dv-v' }, `v${v}`), h('span', { class: 'dv-who' }, vv.by === r.counterparty ? cp : 'Us'),
-            h('span', { class: 'dv-said' }, said),
-            agreed ? h('span', { class: 'dv-tag is-agreed' }, 'Agreed') : now ? h('span', { class: 'dv-tag is-now' }, k?.d === 'accept' ? 'Accepted' : 'Reopened') : null);
-        }),
-        /* pushed back with the redline: what goes out in our next version, still to send */
-        k?.d === 'push' && k.redline ? h('div', { class: 'dv-step is-next', 'data-tip': 'Goes out with your next version' }, h('span', { class: 'dv-dot' }), h('span', { class: 'dv-v' }, `v${d.versions.length + 1}`), h('span', { class: 'dv-who' }, 'Us'),
-          h('span', { class: 'dv-said' }, x.was), h('span', { class: 'dv-tag is-ours' }, 'Your redline')) : null));
-      /* why it counts as settled: the turn it closed in, the email that said yes, the contract or precedents it matches */
-      const basis = h('div', { class: 'dv-sec' },
-        ...x.basis.map(([bk, t, re]) => { const a = actOf(re);
-          return h('div', { class: 'dv-why' }, h('span', { class: 'dv-why-ic', html: ICON(BIC[bk], 14) }), h('span', {}, t, a ? h('span', { class: 'dv-when' }, ` · ${devDay(a.when)}`) : null)); }));
-      const said = x.stake && actOf(x.stake[1]);
-      const stake = said ? h('div', { class: 'dv-stake' }, mxFace(x.stake[0], 'pb-av dv-av'), h('span', {}, h('b', {}, x.stake[0]), h('span', { class: 'dv-stake-t' }, said.what))) : null;
+      /* open: the clause in every version, newest first, each marked against the one before it; the version
+         it was agreed in carries its proof; a version that left it alone is one line */
+      const mail = (x.basis || []).filter(([bk]) => bk === 'mail').map(([, t, re]) => [t, actOf(re)]).filter(([, a]) => a);
+      const ver = (w) => {
+        const vv = d.versions[w.v - 1], side = w.next || vv.by !== r.counterparty ? 'Us' : cp;
+        const agreed = !w.next && w.v === x.agreed, now = !w.next && w.v === dv.v;
+        const tag = w.next ? ['ours', 'Your redline'] : agreed ? ['agreed', 'Agreed'] : now ? ['now', k?.d === 'accept' ? 'Accepted' : 'Reopened'] : null;
+        const whole = devWhole.has(x.id + ':' + w.v), clip = devClip(w.ops), full = devFull(w.ops);
+        const vh = h(w.next ? 'div' : 'button', { class: 'dv-vh', type: w.next ? null : 'button', 'data-tip': w.next ? null : `Open v${w.v}, ${vv.name}`,
+          onclick: w.next ? null : (e) => { e.stopPropagation(); vi = w.v - 1; paintDoc(); } },
+          h('b', {}, `v${w.v}`), h('span', { class: 'dv-vw' }, [side, w.next ? 'not sent yet' : devDay(vv.when), w.same ? 'left it as it was' : null].filter(Boolean).join(' · ')),
+          h('span', { class: 'pb-grow' }), tag ? h('span', { class: 'dv-tag is-' + tag[0] }, tag[1]) : null);
+        return h('div', { class: 'dv-ver' + (agreed ? ' is-agreed' : '') + (now ? ' is-now' : '') + (w.next ? ' is-next' : '') + (w.same ? ' is-same' : '') + (vi === w.v - 1 && !w.next ? ' is-here' : '') },
+          h('span', { class: 'dv-dot' }), vh,
+          w.same ? null : h('div', { class: 'dv-txt', html: whole ? full : clip }),
+          !w.same && clip !== full ? h('button', { class: 'mx-link dv-more', type: 'button', onclick: (e) => { e.stopPropagation(); devWhole[whole ? 'delete' : 'add'](x.id + ':' + w.v); paintDPanel(); } }, whole ? 'Show less' : 'Show all') : null,
+          agreed ? mail.map(([t, a]) => h('div', { class: 'dv-why' }, h('span', { class: 'dv-why-ic', html: ICON(BIC.mail, 14) }), h('span', {}, t, h('span', { class: 'dv-when' }, ` · ${devDay(a.when)}`)))) : null);
+      };
+      const thread = h('div', { class: 'dv-vers' }, ...[...rows].reverse().map(ver));
+      const prev = `v${dv.v - 1}`;
       let tail;
       if (k) {
         const cmt = k.cid && mxWComments(r).find(c => c.id === k.cid);
@@ -4070,7 +4142,6 @@ function intakePage(r, opts = {}) {
             h('span', { class: 'pb-grow' }),
             h('button', { class: 'mx-link', type: 'button', onclick: (e) => { e.stopPropagation(); undoDev(x); } }, 'Undo')));
       } else if (devPush === x.id) {
-        /* push back: the reminder, written from the record and yours to change, and the agreed wording back as a redline */
         /* the box starts empty; the reminder Clavia wrote from the record is one click away, never typed in for you */
         const ta = h('textarea', { class: 'dv-in', rows: '2', placeholder: `Comment for ${cp}`, 'aria-label': `Comment for ${cp}` });
         const chip = h('button', { class: 'dv-chip', type: 'button', onclick: (e) => { e.stopPropagation(); ta.value = fill(x.remind, x); chip.remove(); grow(); ta.focus(); } },
@@ -4082,7 +4153,7 @@ function intakePage(r, opts = {}) {
         ta.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); go(); } if (e.key === 'Escape') { devPush = null; paintDPanel(); } };
         tail = h('div', { class: 'dv-push' },
           ta, chip,
-          h('label', { class: 'dv-chk' }, chk, h('span', {}, `Put ${x.was} back as a redline`)),
+          h('label', { class: 'dv-chk' }, chk, h('span', {}, `Put the ${prev} wording back as a redline`)),
           h('div', { class: 'dv-acts' }, h('span', { class: 'pb-grow' }),
             h('button', { class: 'rqp-cmtpop-txt', type: 'button', onclick: (e) => { e.stopPropagation(); devPush = null; paintDPanel(); } }, 'Cancel'),
             h('button', { class: 'pb-btn pb-btn--primary', type: 'button', onclick: (e) => { e.stopPropagation(); go(); } }, 'Push back')));
@@ -4091,10 +4162,10 @@ function intakePage(r, opts = {}) {
           h('button', { class: 'pb-btn pb-btn--primary', type: 'button', onclick: (e) => { e.stopPropagation(); devPush = x.id; paintDPanel(); } }, 'Push back'),
           h('button', { class: 'pb-btn', type: 'button', onclick: (e) => { e.stopPropagation(); acceptDev(x); } }, 'Accept'),
           h('span', { class: 'pb-grow' }),
-          h('button', { class: 'mx-link dv-cmp', type: 'button', 'data-tip': 'The full comparison, kept as a document', onclick: (e) => { e.stopPropagation(); compareInto({ di, k: dv.v - 2 }, { di, k: dv.v - 1 }); } }, `Compare v${dv.v - 1} and v${dv.v}`));
+          h('button', { class: 'mx-link dv-cmp', type: 'button', 'data-tip': 'The full comparison, kept as a document', onclick: (e) => { e.stopPropagation(); compareInto({ di, k: dv.v - 2 }, { di, k: dv.v - 1 }); } }, `Compare ${prev} and v${dv.v}`));
       }
-      return h('div', { class: cls, 'data-did': x.id, onclick: (e) => { if (!e.target.closest('button, textarea, label, input, a')) focusDev(x); } },
-        ...head, trail, basis, stake, x.note ? h('p', { class: 'dv-note' }, x.note) : null, tail);
+      return h('div', { class: cls, 'data-did': x.id, onclick: (e) => { if (!e.target.closest('button, textarea, label, input, a, .dv-vers')) focusDev(x); } },
+        ...head, thread, x.note ? h('p', { class: 'dv-note' }, x.note) : null, tail);
     };
     cpanel.replaceChildren(
       h('div', { class: 'rqp-cp-head' }, h('b', {}, 'Deviations'), ver ? h('span', { class: 'dv-head-v', 'data-tip': ver.name }, `in v${dv.v}`) : null, h('span', { class: 'pb-grow' })),

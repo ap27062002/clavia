@@ -3560,37 +3560,37 @@ html.vt-cmts::view-transition-new(rqp-doc), html.vt-cmts::view-transition-new(rq
 .dv-cl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-faint); }
 .dv-top { min-height: 20px; }
 .dv-t { font-size: 14px; font-weight: 600; color: var(--text); }
-.dv-move { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 13.5px; }
-.dv-was { color: var(--text-soft); }
-.dv-arr { display: grid; color: var(--text-faint); }
-.dv-now { color: #A8432F; font-weight: 500; }
-.dv-card.is-done .dv-now { color: var(--text-soft); }
 .dv-sub { font-size: 12.5px; color: var(--text-faint); }
+/* closed: their change as a redline, cut to the words around it */
+.dv-ex { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin: 2px 0 1px; font-size: 13px; line-height: 1.5; color: var(--text-soft); }
+.dv-ex del, .dv-txt del { color: #B4483C; text-decoration-color: rgba(180, 72, 60, .6); }
+.dv-ex ins, .dv-txt ins { color: #1F6E46; text-decoration: underline; text-decoration-color: rgba(31, 110, 70, .45); text-underline-offset: 3px; }
 .dv-sec { margin-top: 12px; }
-.dv-trail { position: relative; display: flex; flex-direction: column; }
-.dv-trail::before { content: ''; position: absolute; left: 4.5px; top: 14px; bottom: 14px; width: 1px; background: #E6E2DB; }
-.dv-step { display: grid; grid-template-columns: 10px 20px 74px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 5px 6px 5px 0; border: 0; border-radius: 6px; background: none; font: inherit; font-size: 13px; text-align: left; color: var(--text); cursor: pointer; }
-.dv-step:hover { background: #F6F5F2; }
-.dv-dot { position: relative; z-index: 1; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1.5px #CFCAC2; }
-.dv-step.is-agreed .dv-dot { background: #2F7A52; box-shadow: 0 0 0 2px var(--surface); }
-.dv-step.is-now .dv-dot { background: #A8432F; box-shadow: 0 0 0 2px var(--surface); }
-.dv-v { font-size: 12px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
-.dv-step.is-here .dv-v { color: var(--text); font-weight: 600; }
-.dv-who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-faint); }
-.dv-said { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dv-tag { padding: 1px 6px; border-radius: 5px; font-size: 11px; font-weight: 600; line-height: 16px; }
+/* open: the clause through the versions, newest first, on one thread */
+.dv-vers { position: relative; display: flex; flex-direction: column; gap: 16px; margin-top: 14px; }
+.dv-vers::before { content: ''; position: absolute; left: 4.5px; top: 10px; bottom: 10px; width: 1px; background: #E6E2DB; }
+.dv-ver { position: relative; padding-left: 22px; }
+.dv-ver .dv-dot { position: absolute; left: 0; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1.5px #CFCAC2, 0 0 0 3px var(--surface); }
+.dv-ver.is-agreed .dv-dot { background: #2F7A52; box-shadow: 0 0 0 3px var(--surface); }
+.dv-ver.is-now .dv-dot { background: #A8432F; box-shadow: 0 0 0 3px var(--surface); }
+.dv-ver.is-next .dv-dot { box-shadow: inset 0 0 0 1.5px #2D5BA8, 0 0 0 3px var(--surface); }
+.dv-vh { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 20px; padding: 0; border: 0; background: none; font: inherit; font-size: 12.5px; color: var(--text-faint); text-align: left; }
+button.dv-vh { cursor: pointer; }
+button.dv-vh:hover .dv-vw { color: var(--text-soft); }
+.dv-vh b { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.dv-ver.is-here .dv-vh b { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(0, 0, 0, .25); }
+.dv-txt { margin-top: 4px; font-size: 13px; line-height: 1.55; color: var(--text); }
+.dv-hit { font-weight: 600; }
+.dv-ver.is-next .dv-txt del, .dv-ver.is-next .dv-txt ins { color: #2D5BA8; text-decoration-color: rgba(45, 91, 168, .55); }
+.dv-more { margin-top: 4px; font-size: 12px; }
+.dv-ver .dv-why { margin-top: 6px; padding: 0; }
+.dv-tag { flex: none; padding: 1px 6px; border-radius: 5px; font-size: 11px; font-weight: 600; line-height: 16px; }
 .dv-tag.is-agreed { background: #E9F3EC; color: #2F7A52; }
 .dv-tag.is-now { background: #FBEDE9; color: #A8432F; }
-.dv-step.is-next { cursor: default; }
-.dv-step.is-next:hover { background: none; }
-.dv-step.is-next .dv-dot { box-shadow: inset 0 0 0 1.5px #2D5BA8; background: var(--surface); }
 .dv-tag.is-ours { background: #EAF0F9; color: #2D5BA8; }
 .dv-why { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; font-size: 13px; line-height: 1.45; color: var(--text-soft); }
 .dv-why-ic { display: grid; flex: none; margin-top: 1px; color: var(--text-faint); }
 .dv-when { color: var(--text-faint); }
-.dv-stake { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; font-size: 13px; line-height: 1.45; color: var(--text-soft); }
-.dv-stake .dv-av { flex: none; width: 20px; height: 20px; }
-.dv-stake b { margin-right: 5px; font-weight: 600; color: var(--text); }
 .dv-note { margin: 8px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--text-faint); }
 .dv-acts { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 .dv-cmp { font-size: 12.5px; }
