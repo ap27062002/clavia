@@ -449,6 +449,20 @@ function mxShowcaseRefresh(r) {
   }
 }
 
+/* ── Brightwell's v5 (20 Oct), for browsers that seeded Brightwell before it existed ──
+   Their second redline, its two activity lines and its playbook round are added once.
+   Only when the MSA still ends at our v4: a version someone uploaded is never stepped on. */
+function mxShowcaseV5TopUp(r) {
+  const d1 = r?.documents?.find(x => x.id === 'd1');
+  if (!d1 || d1.versions.length !== 4 || d1.versions[3].name !== 'Our response') return;
+  const v5 = mxShowcase(r.id).documents.find(x => x.id === 'd1')?.versions[4]; if (!v5) return;
+  const now = Date.now(), at = (mm) => new Date(now - (45 - mm) * 6e4).toISOString();
+  d1.versions.push({ ...v5, when: at(0) });
+  r.activity = [...(r.activity || []), ...mxShowcaseV5(at)];
+  if (r.rounds?.docs?.d1 && !r.rounds.docs.d1.some(x => x.v === 5)) r.rounds.docs.d1.push(JSON.parse(JSON.stringify(MX_ROUND_V5)));
+  r.updated = at(2);
+}
+
 /* run from mxIntake each time: the comment threads are registered under each request's number, then
    (once per browser, behind d.demoV: 2 since the mentions were fixed) the two Gulf Systems requests are told in full */
 function mxDemoSeed(d) {
@@ -457,6 +471,7 @@ function mxDemoSeed(d) {
   const nda = find('gulf-nda'), letter = find('gulf-letter');
   if (nda) MX_WCOMMENTS[nda.id] = MX_WCOMMENTS['gulf-nda'];
   if (letter) MX_WCOMMENTS[letter.id] = MX_WCOMMENTS['gulf-letter'];
+  if (!d.devV) { mxShowcaseV5TopUp(list.find(q => q.id === d.showcaseId)); d.devV = 1; save(); }
   if (d.demoV === 3) return;
   for (const [r, k, fill] of [[nda, 'gulf-nda', mxGulfNda], [letter, 'gulf-letter', mxGulfLetter]]) {
     if (!r) continue;

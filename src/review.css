@@ -802,6 +802,10 @@ dialog.jv-jdlg { width: min(460px, calc(100% - 32px)); border-radius: 16px; box-
 .jv-cbar .jv-btn { height: 28px; line-height: 28px; padding: 0 12px; font-size: 13px; }
 .jv-scard .jv-cbox { border-top: 1px solid color-mix(in srgb, var(--jv-text) 7%, transparent); }
 .jv-nmark { display: grid; color: var(--jv-faint); flex: none; }
+/* a deviation on this clause, from the request: their version reopens something agreed */
+.jv-xmark { display: grid; flex: none; padding: 2px; border-radius: 5px; color: #A8432F; cursor: pointer; }
+.jv-xmark:hover { background: #FBEDE9; }
+.jv-xmark svg { width: 15px; height: 15px; }
 
 /* ---------- Rounds ---------- */
 .jv-rk-accepted { --jv-rk: var(--jv-green); }
