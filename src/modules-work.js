@@ -3939,7 +3939,6 @@ function intakePage(r, opts = {}) {
   const devDay = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   const longDay = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
   const actOf = (re) => re ? (r.activity || []).find(a => re.test(a.what || '')) : null;
-  const andJoin = (xs) => xs.length < 2 ? xs.join('') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1];
   const cpWord = () => (r.counterparty || 'They').split(/\s+/)[0];
   /* the words a deviation is about, as a range in the page (struck words do not count, as in the comments) */
   const rangeOf = (q) => {
@@ -3952,7 +3951,7 @@ function intakePage(r, opts = {}) {
     const rg = new Range(); rg.setStart(sn, Math.min(so, sn.length)); rg.setEnd(en, Math.min(eo, en.length));
     return rg;
   };
-  /* in the document: each deviation's words washed, the open one stronger, and a mark in the margin beside it */
+  /* in the document: a mark in the margin beside each deviation; the open one's words washed, as a comment's are */
   const devRail = h('div', { class: 'rqp-dev-rail' });
   scroll.append(devRail);
   const markDevs = (scrollTo) => {
@@ -3960,11 +3959,11 @@ function intakePage(r, opts = {}) {
     devRail.replaceChildren();
     const d = docs[di], dv = d && mxDevOf(r, d.id);
     if (!dv || vi !== dv.v - 1 || !page.isConnected) return;
-    const dec = mxDevDec(r), open = [], on = [];
+    const dec = mxDevDec(r), on = [];
     const sr = scroll.getBoundingClientRect(), pr = page.getBoundingClientRect();
     for (const x of dv.items) {
       const k = dec[x.id], rg = rangeOf(k?.d === 'push' && k.redline ? x.back : x.quote); if (!rg) continue;
-      if (x.id === devFocus) on.push(rg); else if (!k) open.push(rg);
+      if (x.id === devFocus) on.push(rg);
       const top = (rg.getClientRects()[0] || rg.getBoundingClientRect()).top;
       devRail.append(h('button', { class: 'rqp-dev-pin' + (k ? ' is-done' : '') + (x.id === devFocus ? ' is-on' : ''), type: 'button',
         style: `top:${Math.round(top - sr.top + scroll.scrollTop - 3)}px;left:${Math.round(pr.right - sr.left - 34)}px`,
@@ -3972,10 +3971,7 @@ function intakePage(r, opts = {}) {
         onclick: () => paneTo('devs', x.id) }));
       if (scrollTo && x.id === devFocus) scroll.scrollTo({ top: scroll.scrollTop + top - sr.top - 160, behavior: 'smooth' });
     }
-    if (window.CSS?.highlights && typeof Highlight !== 'undefined') {
-      if (open.length) CSS.highlights.set('rqp-dev', new Highlight(...open));
-      if (on.length) CSS.highlights.set('rqp-dev-on', new Highlight(...on));
-    }
+    if (on.length && window.CSS?.highlights && typeof Highlight !== 'undefined') CSS.highlights.set('rqp-dev-on', new Highlight(...on));
   };
   /* the marks follow the text as the page reflows (the pane opening, the window, the splitter); the observer is held on the page so it lives as long as the page */
   if (typeof ResizeObserver === 'function') { let q = 0; page.devRO = new ResizeObserver(() => { cancelAnimationFrame(q); q = requestAnimationFrame(() => markDevs()); }); page.devRO.observe(page); }
@@ -4038,10 +4034,12 @@ function intakePage(r, opts = {}) {
     };
     const card = (x) => {
       const on = devFocus === x.id, k = dec[x.id];
-      const sub = x.kind === 'reversal' ? `Agreed in v${x.agreed}, ${devDay(d.versions[x.agreed - 1].when)}` : x.kind === 'prior' ? `Their past contract says ${x.was}` : `Your precedents say ${x.was}`;
+      /* what kind of deviation, in words on the faint line (no coloured tags): the proof sits with it */
+      const sub = x.kind === 'reversal' ? `Reversal · agreed in v${x.agreed}, ${devDay(d.versions[x.agreed - 1].when)}` : x.kind === 'prior' ? `Past contract · their 2025 pilot says ${x.was}` : `Precedent · your signed MSAs say ${x.was}`;
       const head = [
-        h('div', { class: 'dv-top' }, h('span', { class: 'dv-kind is-' + x.kind }, MX_DEV_KIND[x.kind]), h('span', { class: 'dv-cl' }, x.clause), h('span', { class: 'pb-grow' }),
-          k ? h('span', { class: 'dv-st is-' + k.d }, mxStMark(MARK[k.d]), k.d === 'push' ? 'Pushed back' : 'Accepted') : null),
+        /* the clause, then the status as the comments show it: open shows nothing, an answer shows its mark */
+        h('div', { class: 'dv-top' }, h('span', { class: 'dv-cl' }, x.clause), h('span', { class: 'pb-grow' }),
+          k ? h('span', { class: 'wd-st wd-tag wd-tag--ic is-' + MARK[k.d], 'data-tip': k.d === 'push' ? 'Pushed back' : 'Accepted' }, mxStMark(MARK[k.d])) : null),
         h('div', { class: 'dv-t' }, x.term),
         h('div', { class: 'dv-move' }, h('span', { class: 'dv-was' }, x.was), h('span', { class: 'dv-arr', html: ICON('<path d="M5 12h14M13 6l6 6-6 6"/>', 12) }), h('span', { class: 'dv-now' }, x.now)),
         h('div', { class: 'dv-sub' }, sub)];
@@ -4049,7 +4047,7 @@ function intakePage(r, opts = {}) {
       if (!on) return h('div', { class: cls, tabindex: '0', role: 'button', 'data-did': x.id, onclick: () => focusDev(x),
         onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); focusDev(x); } } }, ...head);
       /* how the point moved: every version that touched it, in one line of time, the version it closed in marked */
-      const trail = h('div', { class: 'dv-sec' }, h('div', { class: 'dv-lbl' }, 'How it moved'),
+      const trail = h('div', { class: 'dv-sec' },
         h('div', { class: 'dv-trail' }, ...x.trail.map(([v, said]) => {
           const vv = d.versions[v - 1], agreed = v === x.agreed, now = v === dv.v;
           return h('button', { class: 'dv-step' + (agreed ? ' is-agreed' : '') + (now ? ' is-now' : '') + (vi === v - 1 ? ' is-here' : ''), type: 'button', 'data-tip': `Open v${v}, ${vv.name}`,
@@ -4062,7 +4060,7 @@ function intakePage(r, opts = {}) {
         k?.d === 'push' && k.redline ? h('div', { class: 'dv-step is-next', 'data-tip': 'Goes out with your next version' }, h('span', { class: 'dv-dot' }), h('span', { class: 'dv-v' }, `v${d.versions.length + 1}`), h('span', { class: 'dv-who' }, 'Us'),
           h('span', { class: 'dv-said' }, x.was), h('span', { class: 'dv-tag is-ours' }, 'Your redline')) : null));
       /* why it counts as settled: the turn it closed in, the email that said yes, the contract or precedents it matches */
-      const basis = h('div', { class: 'dv-sec' }, h('div', { class: 'dv-lbl' }, x.kind === 'reversal' ? 'Why it counts as agreed' : x.kind === 'prior' ? 'What they agreed before' : 'What your precedents say'),
+      const basis = h('div', { class: 'dv-sec' },
         ...x.basis.map(([bk, t, re]) => { const a = actOf(re);
           return h('div', { class: 'dv-why' }, h('span', { class: 'dv-why-ic', html: ICON(BIC[bk], 14) }), h('span', {}, t, a ? h('span', { class: 'dv-when' }, ` · ${devDay(a.when)}`) : null)); }));
       const said = x.stake && actOf(x.stake[1]);
@@ -4071,21 +4069,23 @@ function intakePage(r, opts = {}) {
       if (k) {
         const cmt = k.cid && mxWComments(r).find(c => c.id === k.cid);
         tail = h('div', { class: 'dv-done' },
-          h('p', {}, k.d === 'push' ? (k.redline ? `Your redline puts ${x.was} back, with a comment for ${cp}.` : `Your comment tells ${cp} this was agreed.`) : `${x.now} is now the agreed position.`),
           h('div', { class: 'dv-acts' },
             cmt ? h('button', { class: 'mx-link', type: 'button', onclick: (e) => { e.stopPropagation(); paneMode = 'comments'; state.rqPane = 'comments'; save(); focusCmt(cmt); } }, 'See the comment') : null,
             h('span', { class: 'pb-grow' }),
             h('button', { class: 'mx-link', type: 'button', onclick: (e) => { e.stopPropagation(); undoDev(x); } }, 'Undo')));
       } else if (devPush === x.id) {
         /* push back: the reminder, written from the record and yours to change, and the agreed wording back as a redline */
-        const ta = h('textarea', { class: 'dv-in', rows: '3', 'aria-label': `Comment for ${cp}` }); ta.value = fill(x.remind, x);
+        /* the box starts empty; the reminder Clavia wrote from the record is one click away, never typed in for you */
+        const ta = h('textarea', { class: 'dv-in', rows: '2', placeholder: `Comment for ${cp}`, 'aria-label': `Comment for ${cp}` });
+        const chip = h('button', { class: 'dv-chip', type: 'button', onclick: (e) => { e.stopPropagation(); ta.value = fill(x.remind, x); chip.remove(); grow(); ta.focus(); } },
+          quillEl('static', { cls: 'dv-chip-q' }), x.kind === 'reversal' ? `Remind them it was agreed in v${x.agreed}` : x.kind === 'prior' ? 'Remind them of the pilot agreement' : 'Remind them it has stood since v2');
         const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight + 2, 220) + 'px'; };
-        ta.oninput = grow; requestAnimationFrame(() => { grow(); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); });
+        ta.oninput = grow; requestAnimationFrame(() => { grow(); ta.focus(); });
         const chk = h('input', { type: 'checkbox' }); chk.checked = true;
         const go = () => { const t = ta.value.trim(); if (!t) return ta.focus(); pushDev(x, t, chk.checked); };
         ta.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); go(); } if (e.key === 'Escape') { devPush = null; paintDPanel(); } };
         tail = h('div', { class: 'dv-push' },
-          h('div', { class: 'dv-lbl' }, `Comment for ${cp}`), ta,
+          ta, chip,
           h('label', { class: 'dv-chk' }, chk, h('span', {}, `Put ${x.was} back as a redline`)),
           h('div', { class: 'dv-acts' }, h('span', { class: 'pb-grow' }),
             h('button', { class: 'rqp-cmtpop-txt', type: 'button', onclick: (e) => { e.stopPropagation(); devPush = null; paintDPanel(); } }, 'Cancel'),
@@ -4110,11 +4110,6 @@ function intakePage(r, opts = {}) {
       h('div', { class: 'rqp-cp-list' },
         ...shown.map(card),
         items.length && !shown.length ? h('p', { class: 'rqp-cp-none' }, none[devF] || 'Nothing here.') : null,
-        /* what was checked, so a clean result can be trusted; a change on a point still open is named, and is not a deviation */
-        dv ? h('div', { class: 'dv-foot' },
-          h('p', {}, `Checked against ${andJoin(dv.checked)}.`),
-          dv.open?.length ? h('p', {}, `${andJoin(dv.open)} also changed in v${dv.v}, but ${dv.open.length > 1 ? 'those points were' : 'it was'} still open, so ${dv.open.length > 1 ? 'they are not deviations' : 'it is not a deviation'}. `,
-            mxRoundOf(r, d.id) ? h('button', { class: 'mx-link', type: 'button', onclick: () => { MX.intake.roundTab = 'playbook'; MX.intake.swap = true; openReview(d.id); } }, 'See the Playbook review') : null) : null) : null,
         !dv ? h('div', { class: 'rqp-cp-empty' },
           h('span', { class: 'rqp-cp-empty-ic', html: ICON(DEV_IC, 18) }),
           h('b', {}, 'No deviations'),

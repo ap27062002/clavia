@@ -653,8 +653,6 @@ MX_ROUNDS['Brightwell Energy plc'].d1.push(MX_ROUND_V5);
    remind: the comment for them, {agreed}/{mail} filled with dates (mock data; nothing is synced) */
 const MX_DEVIATIONS = {
   showcase: { d1: { v: 5,
-    checked: ['v1 to v4 of this agreement', 'the Pilot Services Agreement with Brightwell, March 2025', '14 signed enterprise MSAs'],
-    open: ['Breach notice'],
     items: [
       { id: 'dv1', kind: 'reversal', clause: '3. Fees and Payment', term: 'Payment terms', was: '45 days', now: '60 days', agreed: 4,
         trail: [[2, '30 days'], [3, '60 days'], [4, '45 days'], [5, '60 days']],
@@ -681,7 +679,6 @@ const MX_DEVIATIONS = {
       { id: 'dv4', kind: 'precedent', clause: '4. Service Levels', term: 'Uptime', was: '99.9%', now: '99.95%', agreed: 3,
         trail: [[2, '99.9%'], [3, '99.9%'], [4, '99.9%'], [5, '99.95%']],
         basis: [['precedent', 'Kestrel Freight MSA, signed 3 March 2026: 99.9%'], ['precedent', 'Harbor Retail MSA, signed 14 January 2026: 99.9%'], ['thread', 'Left as it was in their v3']],
-        note: 'Matt Rivera is checking with engineering what we can commit to.',
         quote: '99.95%', back: '99.9%',
         edits: [['<del>99.9%</del><ins>99.95%</ins>', '<del class="is-ours">99.95%</del><ins class="is-ours">99.9%</ins>']],
         remind: 'Uptime has stood at 99.9% since v2, and it is what we commit to in every enterprise agreement. We have put 99.9% back.' },
