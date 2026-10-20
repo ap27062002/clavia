@@ -25,6 +25,8 @@
    Loaded before app.js; runs at call time.
 ================================================================== */
 
+/* how a review was run (paper · side · approach) under the playbook's name, and the card that changes it: off 20 Oct */
+const SHOW_RUN_SETUP = false;
 function reviewPage(req, onStatus) {
   const A = JV_REVIEWS[req.review];
   const J = (cls) => (cls ? cls.split(/\s+/).filter(Boolean).map(c => 'jv-' + c).join(' ') : '');
@@ -308,7 +310,8 @@ function reviewPage(req, onStatus) {
     more.innerHTML = RP_IC.dots; more.dataset.tip = 'More'; more.setAttribute('aria-label', 'More');
     more.onclick = (e) => { e.stopPropagation(); finishMenu(more); };
     top.append(sw, el('span', 'grow'), prog, again, more);
-    head.append(top, contextLine());
+    head.append(top);
+    if (SHOW_RUN_SETUP) head.append(contextLine());
 
     const k = a.counts, u = k.unacceptable || 0, f = k.fallback || 0, g = k.preferred || 0;
     const stack = el('div', 'stack');
@@ -334,7 +337,7 @@ function reviewPage(req, onStatus) {
     if (R.tab === 'ask') p.append(askView());
     else {
       p.append(head);
-      if (R.setupOpen) p.append(setupCard());
+      if (SHOW_RUN_SETUP && R.setupOpen) p.append(setupCard());
       list = el('div', 'plist');
       list.addEventListener('scroll', () => head.classList.toggle('jv-scrolled', list.scrollTop > 2), { passive: true });
       p.append(list);
