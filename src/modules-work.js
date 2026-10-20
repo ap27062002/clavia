@@ -3921,7 +3921,7 @@ function intakePage(r, opts = {}) {
      why it counts as settled, and the two answers: push back (the agreed wording back as our
      redline, and a comment for them) or accept. Both can be undone. */
   /* arriving from a deviation mark in the playbook review: that one open, and its words in view */
-  let devFocus = MX.intake.devFocus || null, devF = 'all', devPush = null;
+  let devFocus = MX.intake.devFocus || null, devPush = null;
   if (devFocus) { MX.intake.devFocus = null; setTimeout(() => markDevs(true), 450); }
   const DEV_IC = '<path d="M9 13.5 4.5 9 9 4.5"/><path d="M4.5 9h10a5 5 0 0 1 0 10H10"/>';
   /* the four tabs under the pane: Playbook and Ask open the playbook review; Deviations and Comments swap in place */
@@ -4018,10 +4018,8 @@ function intakePage(r, opts = {}) {
   const paintDPanel = () => {
     const d = docs[di]; if (!d || !cpanel) return;
     const dv = mxDevOf(r, d.id), items = dv?.items || [], dec = mxDevDec(r), cp = cpWord(), ver = dv && d.versions[dv.v - 1];
-    const MARK = { open: 'open', push: 'replied', accept: 'closed' };
-    const DF = [['all', 'All', () => true], ['open', 'Open', (x) => !dec[x.id]], ['push', 'Pushed back', (x) => dec[x.id]?.d === 'push'], ['accept', 'Accepted', (x) => dec[x.id]?.d === 'accept']];
-    const test = (DF.find(f => f[0] === devF) || DF[0])[2];
-    const shown = items.filter(test).sort((a, b) => parseInt(a.clause) - parseInt(b.clause));
+    /* no statuses here (20 Oct): a deviation is answered inside its card, and the list stays in clause order */
+    const shown = [...items].sort((a, b) => parseInt(a.clause) - parseInt(b.clause));
     const BIC = {
       thread: '<path d="M7 3.5h6.5L18 8v11a1.5 1.5 0 0 1-1.5 1.5h-9.5A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z"/><path d="M13 3.5V8.5h5"/>',
       mail: '<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4 7 8 6 8-6"/>',
@@ -4037,9 +4035,7 @@ function intakePage(r, opts = {}) {
       /* what kind of deviation, in words on the faint line (no coloured tags): the proof sits with it */
       const sub = x.kind === 'reversal' ? `Reversal · agreed in v${x.agreed}, ${devDay(d.versions[x.agreed - 1].when)}` : x.kind === 'prior' ? `Past contract · their 2025 pilot says ${x.was}` : `Precedent · your signed MSAs say ${x.was}`;
       const head = [
-        /* the clause, then the status as the comments show it: open shows nothing, an answer shows its mark */
-        h('div', { class: 'dv-top' }, h('span', { class: 'dv-cl' }, x.clause), h('span', { class: 'pb-grow' }),
-          k ? h('span', { class: 'wd-st wd-tag wd-tag--ic is-' + MARK[k.d], 'data-tip': k.d === 'push' ? 'Pushed back' : 'Accepted' }, mxStMark(MARK[k.d])) : null),
+        h('div', { class: 'dv-top' }, h('span', { class: 'dv-cl' }, x.clause)),
         h('div', { class: 'dv-t' }, x.term),
         h('div', { class: 'dv-move' }, h('span', { class: 'dv-was' }, x.was), h('span', { class: 'dv-arr', html: ICON('<path d="M5 12h14M13 6l6 6-6 6"/>', 12) }), h('span', { class: 'dv-now' }, x.now)),
         h('div', { class: 'dv-sub' }, sub)];
@@ -4100,22 +4096,15 @@ function intakePage(r, opts = {}) {
       return h('div', { class: cls, 'data-did': x.id, onclick: (e) => { if (!e.target.closest('button, textarea, label, input, a')) focusDev(x); } },
         ...head, trail, basis, stake, x.note ? h('p', { class: 'dv-note' }, x.note) : null, tail);
     };
-    const none = { open: 'Every deviation has an answer.', push: 'Nothing pushed back yet.', accept: 'Nothing accepted yet.' };
     cpanel.replaceChildren(
       h('div', { class: 'rqp-cp-head' }, h('b', {}, 'Deviations'), ver ? h('span', { class: 'dv-head-v', 'data-tip': ver.name }, `in v${dv.v}`) : null, h('span', { class: 'pb-grow' })),
-      items.length ? h('div', { class: 'rqp-cp-tools' }, h('div', { class: 'rqp-cp-row rqp-cp-row2' },
-        h('div', { class: 'pb-tabs rqp-cp-stabs', role: 'tablist' }, ...DF.map(([fk, label, t]) => h('button', { class: 'pb-tab', type: 'button', role: 'tab', 'aria-selected': String(devF === fk),
-          'data-tip': fk === 'all' ? null : label, onclick: () => { devF = fk; paintDPanel(); } },
-          fk === 'all' ? null : mxStMark(MARK[fk]), fk === 'all' ? 'All' : h('span', { class: 'rqp-stab-w' }, label), h('span', { class: 'pb-tab-n' }, String(items.filter(t).length))))))) : null,
       h('div', { class: 'rqp-cp-list' },
         ...shown.map(card),
-        items.length && !shown.length ? h('p', { class: 'rqp-cp-none' }, none[devF] || 'Nothing here.') : null,
         !dv ? h('div', { class: 'rqp-cp-empty' },
           h('span', { class: 'rqp-cp-empty-ic', html: ICON(DEV_IC, 18) }),
           h('b', {}, 'No deviations'),
           h('p', {}, `When ${r.counterparty || 'the other side'} sends a version back, Clavia checks every change against what was already agreed: earlier in this thread, in past contracts with them, and in your precedents.`)) : null),
       paneTabs(d, 'deviations'));
-    ((L, tools) => { if (!L || !tools) return; const f = () => tools.classList.toggle('is-scrolled', L.scrollTop > 2); L.addEventListener('scroll', f, { passive: true }); f(); })(cpanel.querySelector('.rqp-cp-list'), cpanel.querySelector('.rqp-cp-tools'));
     if (devFocus) requestAnimationFrame(() => cpanel.querySelector(`.dv-card[data-did="${devFocus}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   };
   const openComments = () => {
