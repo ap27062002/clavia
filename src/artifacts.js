@@ -3066,10 +3066,7 @@ function openArtifact(a, { full = false } = {}) {
     h('span', { class: 'deck-title-name' }, a.name),
     h('span', { class: 'caret', 'aria-hidden': 'true' }));
 
-  /* A template's menu would be Rename over a name you can already type
-     into, and Delete over a row that already offers it — so it has no
-     menu, and the name is the name. */
-  const titleEl = h('div', { class: 'deck-title' }, full && a.kind !== 'template' ? nameBtn : nameEl);
+  const titleEl = h('div', { class: 'deck-title' }, full ? nameBtn : nameEl);
 
   /* Rename hands the header back to the same editable name the panelled
      view uses, so there is one way to type a name and not two. */
@@ -3356,16 +3353,14 @@ function openArtifact(a, { full = false } = {}) {
          sits with the title and takes no box there. Beside a chat the
          panel is too narrow to spend the width: the title would shrink to
          nothing to make room for it. */
-      /* a template's conversation is reached from the list, not from over
-         the document — nothing stands on the page that is not the page */
-      h('div', { class: 'deck-top-l' }, titleEl, full && a.kind !== 'template' ? editBtn : null),
+      h('div', { class: 'deck-top-l' }, titleEl, full ? editBtn : null),
       h('div', { class: 'deck-top-actions' },
         /* versions live on the name in full screen, and comments and the
            full-screen toggle belong to a panel beside a conversation —
            there is no conversation here */
         full ? null : vBtn,
         ...(made.extras || []),
-        full || a.kind === 'agent' || a.kind === 'template' ? null : editBtn,
+        full || a.kind === 'agent' ? null : editBtn,
         full ? null : commentLayer(a, shell),
         /* a draft carries its own destination at the foot, beside Send —
            where it belongs, since sending and exporting are the same

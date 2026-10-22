@@ -855,7 +855,7 @@ function fileLook(v, f) {
 const mxTemplate = (id) => mxData().templates.find(t => t.id === id) || null;
 /* the seeded templates have been revised a few times; anything made here starts at 1 */
 const MX_TPL_VER = { 'mutual-nda': 4, 'one-way-nda': 2, 'msa-short': 3, dpa: 2, 'order-form': 5, 'non-renewal': 1, reseller: 1 };
-const mxTplVer = (t) => t.version || MX_TPL_VER[t.id] || 1;
+const mxTplVer = (t) => t.versions?.length || t.version || MX_TPL_VER[t.id] || 1;
 const MX_TPL_TABS = { Agreement: 'Agreements', Addendum: 'Addenda', 'Order form': 'Order Forms', Letter: 'Letters' };
 
 function templatesView() {
@@ -986,6 +986,7 @@ function mxTplAskSet(t, text, files) {
     onDone: (answers) => {
       t.set = Object.fromEntries(MX_SET_KEYS.map(k => [k, answers[k]?.key || MX_SET[k].def]));
       t.updated = mxNow(); save();
+      mxTplEnsureVersions(t);
       /* what was asked for in words that are not on the list is kept and
          said back, because the document cannot be set to it */
       const asked = MX_SET_KEYS.filter(k => answers[k]?.text)
@@ -1215,7 +1216,11 @@ function mxReadDeal(t, text) {
    inChat is the same page docked beside its conversation: the way back and
    the Publish button are the shell's there, so this one does not repeat
    them. */
-function templatePage(t, use = false, shell = false) {
+function templatePage(t, use = false, shell = false, frozen = false) {
+  /* An older version is a record, not a document: it reads, and nothing
+     on it can be moved, renamed or deleted. The newest one is the
+     template itself and is typed into wherever it is open. */
+  const editable = !use && !frozen;
   /* In the shell the document is either the whole screen or docked
      beside a conversation. Full, it is read as a page and the outline is
      open; docked, the document takes the width and the outline is one
@@ -1285,7 +1290,7 @@ function templatePage(t, use = false, shell = false) {
   let last = null;       // where the caret last was, for a new blank
   const block = (b) => {
     const isH = b.h !== undefined;
-    if (use) { const el = h(isH ? 'h2' : 'p', { class: isH ? 'mx-doc-h' : 'mx-doc-p' }); fill(el, isH ? b.h : b.p); return el; }
+    if (!editable) { const el = h(isH ? 'h2' : 'p', { class: isH ? 'mx-doc-h' : 'mx-doc-p' }); fill(el, isH ? b.h : b.p); return el; }
     const el = h(isH ? 'h2' : 'p', { class: isH ? 'mx-doc-h' : 'mx-doc-p', contenteditable: 'plaintext-only', spellcheck: 'false',
       'data-ph': isH ? 'Heading' : 'Write here',
       oninput: () => { b[isH ? 'h' : 'p'] = read(el); t.updated = mxNow(); save(); if (isH) paintIdx(); else queueIdx(); },
@@ -1315,7 +1320,7 @@ function templatePage(t, use = false, shell = false) {
   const docBody = h('div', { class: 'mx-doc-body' });
   const paraEl = (b) => {
     const el = block(b);
-    if (use) return h('div', { class: 'mx-blk', 'data-id': b.id }, el);
+    if (!editable) return h('div', { class: 'mx-blk', 'data-id': b.id }, el);
     return h('div', { class: 'mx-blk', 'data-id': b.id }, el,
       h('button', { class: 'pbv-icon mx-blk-del', type: 'button', 'aria-label': 'Delete paragraph',
         'data-tip': 'Delete Paragraph', html: PBV_TRASH, onclick: () => deletePara(b) }));
@@ -1330,11 +1335,11 @@ function templatePage(t, use = false, shell = false) {
         h('span', { class: 'mx-sec-n' }), block(g.head),
         h('button', { class: 'pbv-icon mx-sec-fold', type: 'button', html: PB_SVG.chev,
           onclick: () => foldSection(sec, !sec.classList.contains('is-folded')) }),
-        !use && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-del', type: 'button', 'aria-label': 'Delete section',
+        editable && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-del', type: 'button', 'aria-label': 'Delete section',
           'data-tip': 'Delete Section', html: PBV_TRASH, onclick: () => deleteSection(groupOf(sec.dataset.id)) }),
-        !use && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-blank', type: 'button', 'aria-label': 'Add a blank',
+        editable && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-blank', type: 'button', 'aria-label': 'Add a blank',
           'data-tip': 'Add Blank', html: MX_ADD_BLANK, onclick: () => addField() }),
-        !use && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-add', type: 'button', 'aria-label': 'Add a paragraph to this section',
+        editable && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-add', type: 'button', 'aria-label': 'Add a paragraph to this section',
           'data-tip': 'Add Paragraph', onclick: () => addParagraph(groupOf(sec.dataset.id)) }, icon('plus', 'ico ico-14'))),
       h('div', { class: 'mx-sec-wrap' }, body));
     foldSection(sec, !open, true);
@@ -1493,13 +1498,13 @@ function templatePage(t, use = false, shell = false) {
       const id = secId(g);
       si++;
       const head = h('div', { class: 'pbv-idx-sec', 'data-sec': id },
-        !use && h('span', { class: 'pbv-idx-grip', 'aria-hidden': 'true', 'data-tip': 'Drag to Reorder', html: PBV_GRIP }),
+        editable && h('span', { class: 'pbv-idx-grip', 'aria-hidden': 'true', 'data-tip': 'Drag to Reorder', html: PBV_GRIP }),
         h('span', { class: 'pbv-idx-no pbv-idx-sec-no' }, `${si}.`),
         h('button', { class: 'pbv-idx-sec-t', type: 'button',
           onclick: () => goSec(id),
-          ondblclick: use ? null : () => renameSec(id) },
+          ondblclick: editable ? () => renameSec(id) : null },
           h('span', { class: 'pbv-idx-sec-name' }, secName(g))),
-        !use && h('button', { class: 'pbv-idx-ren', type: 'button', 'aria-label': 'Rename ' + secName(g),
+        editable && h('button', { class: 'pbv-idx-ren', type: 'button', 'aria-label': 'Rename ' + secName(g),
           'data-tip': 'Rename Section', html: PBV_PENCIL, onclick: (e) => { e.stopPropagation(); renameSec(id); } }));
       return h('div', { class: 'pbv-idx-group' }, head);
     }));
@@ -1627,7 +1632,7 @@ function templatePage(t, use = false, shell = false) {
     }, 200);
   };
   idxList.addEventListener('pointerdown', (e) => {
-    if (use || e.button !== 0 || drag || renaming) return;
+    if (!editable || e.button !== 0 || drag || renaming) return;
     if (e.target.closest('.pbv-idx-ren, input')) return;
     const secHead = e.target.closest('.pbv-idx-sec');
     if (!secHead) return;
@@ -1934,11 +1939,11 @@ function templatePage(t, use = false, shell = false) {
        what you add to a document from up here. A paragraph is added
        inside the section it belongs to, and a blank in the sentence it
        is part of — both under the pointer, where they happen. */
-    !use && h('button', { class: 'pbv-add-fb mx-add-sec', type: 'button', onclick: () => addSection() }, 'Add section'));
+    editable && h('button', { class: 'pbv-add-fb mx-add-sec', type: 'button', onclick: () => addSection() }, 'Add section'));
 
   const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) }, docBar,
     h('div', { class: 'mx-doc-in' },
-      use ? h('h1', { class: 'mx-doc-title' }, t.name || 'Untitled template') : title, docBody, nomatch));
+      editable ? title : h('h1', { class: 'mx-doc-title' }, t.name || 'Untitled template'), docBody, nomatch));
   /* a blank in the document and its field find each other */
   sheet.addEventListener('click', (e) => {
     const c = e.target.closest('.mx-chip');
@@ -2174,6 +2179,74 @@ const MX_ADD_BLANK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
    read it and say what to change. (playbook-view.js does this for
    playbooks; this is the same thing for templates.) */
 
+/* ── a template's past ────────────────────────────────────────
+   Every change in the conversation is a new version, and the one before
+   it stays. The same shape a playbook keeps (pbEnsureVersions, pbBump in
+   playbook-view.js): a snapshot per version, and the live template is
+   whatever the newest one says. */
+const mxTplSnap = (t) => ({ id: t.id, name: t.name, set: t.set ? { ...t.set } : undefined,
+  body: structuredClone(t.body), fields: structuredClone(t.fields) });
+
+/* the shipped templates arrive with a past: each version before this one
+   had fewer sections, the way a template actually grows */
+const MX_TPL_HISTORY = ['First draft', 'Added the missing sections', 'Tightened the wording',
+  'Updated after the last round', 'Section review'];
+function mxTplEnsureVersions(t) {
+  for (const b of t.body) b.id ||= pbUid('blk');
+  if (Array.isArray(t.versions) && t.versions.length) return t;
+  /* how many it is on: what it says, or what the shipped list says, the
+     same two places mxTplVer reads */
+  const V = Math.max(1, t.version || MX_TPL_VER[t.id] || 1);
+  const end = new Date(t.updated);
+  t.versions = [];
+  for (let k = 1; k <= V; k++) {
+    const snap = mxTplSnap(t);
+    if (k < V) {
+      /* an earlier version is this one with its last sections not yet
+         written — the opening and what follows it, cut short */
+      const heads = snap.body.map((b, i) => (b.h !== undefined ? i : -1)).filter(i => i >= 0);
+      const keep = heads[Math.max(0, heads.length - (V - k))];
+      if (keep != null) snap.body = snap.body.slice(0, keep);
+    }
+    const when = new Date(end.getTime() - (V - k) * 17 * 864e5);
+    t.versions.push({
+      name: MX_TPL_HISTORY[Math.min(k - 1, MX_TPL_HISTORY.length - 1)],
+      when: pbWhen(when.toISOString()),
+      by: k % 2 ? t.owner : 'Assistant',
+      snap,
+    });
+  }
+  t.version = V;
+  return t;
+}
+
+/* A new version: the change is made to the live template, and the
+   version records what it now is. */
+function mxTplBump(t, meta, change) {
+  mxTplEnsureVersions(t);
+  change?.(t);
+  t.updated = mxNow();
+  t.versions.push({ when: 'Just now', by: 'Assistant', ...meta, snap: mxTplSnap(t) });
+  t.version = t.versions.length;
+  save();
+  const a = mxTplArtifact(t);
+  a.vi = t.versions.length - 1;
+  return t.versions.length;
+}
+
+/* Restore is the artifact system's: it adds a copy of an older version as
+   the newest. The template follows it the next time it is drawn. */
+function mxTplFollowRestore(t) {
+  const last = t.versions?.[t.versions.length - 1];
+  if (!last || t.version === t.versions.length) return;
+  const snap = structuredClone(last.snap);
+  t.name = snap.name; t.body = snap.body; t.fields = snap.fields;
+  if (snap.set) t.set = snap.set;
+  last.snap = mxTplSnap(t);
+  t.version = t.versions.length;
+  t.updated = mxNow(); save();
+}
+
 const MX_TPL_SES = {};
 const mxTplArtId = (t) => 'template-' + t.id;
 
@@ -2201,6 +2274,11 @@ function mxTplArtifact(t) {
       },
     };
   }
+  /* the menu on the name lists these, and an older one read instead of
+     the live template when a.vi says so */
+  mxTplEnsureVersions(t);
+  a.versions = t.versions;
+  if (a.vi != null && a.vi >= t.versions.length) a.vi = null;
   return a;
 }
 /* an address that names the artifact is a link somebody followed, and a
@@ -2409,9 +2487,8 @@ function templateTurn(a, prompt, files = []) {
       renderBot(m);
       return;
     }
-    spec.run();
-    t.version = mxTplVer(t) + 1; t.updated = mxNow(); save();
-    m.steps.push({ source: 'template', query: spec.name, count: 'v' + mxTplVer(t) });
+    const n = mxTplBump(t, { name: spec.name }, () => spec.run());
+    m.steps.push({ source: 'template', query: spec.name, count: 'v' + n });
     m.text = spec.say();
     m.artifact = a.id;
     renderBot(m);
@@ -2469,8 +2546,13 @@ function mxTplView(t) {
 RENDER.template = (a) => {
   const t = mxTemplate(a.tplId);
   if (!t) return { body: h('div', { class: 'pbv-gone' }, 'This template has been deleted.') };
+  mxTplEnsureVersions(t);
+  mxTplFollowRestore(t);
+  /* the newest version is the template itself; an older one is the
+     record it left, and reads only */
+  const latest = isCurrentVersion(a);
   return {
-    body: templatePage(t, false, true),
+    body: templatePage(latest ? t : versionOf(a).snap, false, true, !latest),
     /* opened from the list, the way out is back to it; beside a chat, the
        template keeps its mark and the panel's own close */
     lead: [state.view === 'templates'
