@@ -889,6 +889,7 @@ function templateList() {
     menu: (x, row) => [
       { label: 'Open', icon: 'files', run: () => mxOpen('templates', x.id) },
       { label: 'Edit with Chat', icon: 'rename', run: () => mxTplEditInChat(x) },
+      { label: 'Open in Word', icon: 'download', run: () => mxTplToWord(x) },
       { label: 'Duplicate', icon: 'copy', run: () => {
         const c = structuredClone(x);
         Object.assign(c, { id: pbUid('tpl'), name: (x.name || 'Untitled template') + ' copy', status: 'draft', used: 0, version: 1, owner: USER.name, updated: mxNow() });
@@ -1000,6 +1001,42 @@ function mxTplAskSet(t, text, files) {
           : { source: 'think', query: 'Read what the document is for' },
       ] },
   ];
+}
+
+/* ── Open in Word ─────────────────────────────────────────────
+ The template as it stands, filled where it is filled, set the way it
+ is set on the page, as a file Word opens. It is reached from the
+ list: nothing stands over the document itself. */
+function mxTplToWord(t, vals = {}) {
+  const esc = (x) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const txt = (x) => esc(x).replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => esc(vals[k]?.trim() || `[${mxFieldLabel(t, k)}]`));
+  const layout = mxSet(t, 'layout'), pt = mxSet(t, 'size');
+  const face = { times: "'Times New Roman',serif", arial: 'Arial,sans-serif', calibri: 'Calibri,sans-serif' }[mxSet(t, 'face')];
+  const paper = { a4: '21cm 29.7cm', letter: '8.5in 11in', a3: '29.7cm 42cm' }[mxSet(t, 'page')];
+  const style = `@page{size:${paper};margin:2.54cm}`
+    + `body{font-family:${face};font-size:${pt}pt;line-height:1.5${layout === 'legal' ? ';text-align:justify' : ''}}`
+    + (layout === 'legal'
+      ? `h1{font-size:${+pt + 1}pt;font-weight:bold;text-align:center;text-transform:uppercase;margin:0 0 22pt}`
+        + `h2{font-size:${pt}pt;font-weight:bold;margin:16pt 0 8pt}p{margin:0 0 8pt}`
+      : `h1{font-size:${+pt + 7}pt;font-weight:bold;margin:0 0 18pt}`
+        + `h2{font-size:${+pt + 1}pt;font-weight:bold;margin:16pt 0 6pt}p{margin:0 0 10pt}`);
+  /* a numbered layout carries its section numbers into the file, because
+     that is what makes it the document it is. Paragraphs are paragraphs:
+     Word does not number them and neither does this. */
+  let si = 0;
+  const body = t.body.filter(b => (b.h ?? b.p).trim()).map(b => {
+    if (layout === 'letter') return b.h !== undefined ? '' : `<p>${txt(b.p)}</p>`;
+    if (b.h !== undefined) { si++; return `<h2>${layout === 'legal' ? si + '.&nbsp;&nbsp;&nbsp;&nbsp;' : ''}${txt(b.h)}</h2>`; }
+    return `<p>${txt(b.p)}</p>`;
+  }).join('');
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8">`
+    + `<title>${esc(t.name || 'Untitled template')}</title><style>${style}</style></head>`
+    + `<body><h1>${esc(t.name || 'Untitled template')}</h1>${body}</body></html>`;
+  const a = h('a', { href: URL.createObjectURL(new Blob(['﻿' + html], { type: 'application/msword' })),
+    download: `${(t.name || 'Untitled template').replace(/[\\/:*?"<>|]+/g, ' ').trim()}.doc` });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  pbToast(`“${t.name || 'Untitled template'}” is downloading for Word`);
 }
 
 /* ── How a document is set ────────────────────────────────────
@@ -1221,6 +1258,8 @@ function templatePage(t, use = false, inChat = false) {
           onclick: () => foldSection(sec, !sec.classList.contains('is-folded')) }),
         !use && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-del', type: 'button', 'aria-label': 'Delete section',
           'data-tip': 'Delete Section', html: PBV_TRASH, onclick: () => deleteSection(groupOf(sec.dataset.id)) }),
+        !use && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-blank', type: 'button', 'aria-label': 'Add a blank',
+          'data-tip': 'Add Blank', html: MX_ADD_BLANK, onclick: () => addField() }),
         !use && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-add', type: 'button', 'aria-label': 'Add a paragraph to this section',
           'data-tip': 'Add Paragraph', onclick: () => addParagraph(groupOf(sec.dataset.id)) }, icon('plus', 'ico ico-14'))),
       h('div', { class: 'mx-sec-wrap' }, body));
@@ -1821,17 +1860,11 @@ function templatePage(t, use = false, inChat = false) {
     h('span', { class: 'pb-grow' }),
     find,
     foldAllBtn,
-    !use && h('button', { class: 'pbv-add', type: 'button', 'aria-label': 'Add', 'data-tip': 'Add Paragraph or Section',
-      'aria-haspopup': 'menu', 'aria-expanded': 'false',
-      onclick: (e) => { e.stopPropagation(); pbWaysMenu(e.currentTarget, 'mx-add', [
-        { key: 'para', name: 'Add New Paragraph', icon: () => h('span', { html: PBV_ADD_CLAUSE }) },
-        { key: 'section', name: 'Add New Section', icon: () => h('span', { html: PBV_ADD_SECTION }) },
-        { key: 'blank', name: 'Add New Blank', icon: () => h('span', { html: MX_ADD_BLANK }) },
-      ], (k) => k === 'blank' ? addField()
-        : k === 'para' ? addParagraph(groups().find(g => secId(g) === curSec) || groups()[groups().length - 1])
-        : addSection(),
-        { keyboard: e.detail === 0, small: true }); } },
-      icon('plus', 'ico ico-14')));
+    /* one named thing rather than a plus that hides a menu: a section is
+       what you add to a document from up here. A paragraph is added
+       inside the section it belongs to, and a blank in the sentence it
+       is part of — both under the pointer, where they happen. */
+    !use && h('button', { class: 'pbv-add-fb mx-add-sec', type: 'button', onclick: () => addSection() }, 'Add section'));
 
   const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) }, docBar,
     h('div', { class: 'mx-doc-in' },
@@ -1936,40 +1969,6 @@ function templatePage(t, use = false, inChat = false) {
     queueMicrotask(() => openArtifact(a));
   };
 
-  /* ── Open in Word: the template as it stands, filled where it is
-     filled, set the way it is set on the page, as a file Word opens ── */
-  const toWord = () => {
-    const esc = (x) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const txt = (x) => esc(x).replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => esc(vals[k]?.trim() || `[${mxFieldLabel(t, k)}]`));
-    const layout = mxSet(t, 'layout'), pt = mxSet(t, 'size');
-    const face = { times: "'Times New Roman',serif", arial: 'Arial,sans-serif', calibri: 'Calibri,sans-serif' }[mxSet(t, 'face')];
-    const paper = { a4: '21cm 29.7cm', letter: '8.5in 11in', a3: '29.7cm 42cm' }[mxSet(t, 'page')];
-    const style = `@page{size:${paper};margin:2.54cm}`
-      + `body{font-family:${face};font-size:${pt}pt;line-height:1.5${layout === 'legal' ? ';text-align:justify' : ''}}`
-      + (layout === 'legal'
-        ? `h1{font-size:${+pt + 1}pt;font-weight:bold;text-align:center;text-transform:uppercase;margin:0 0 22pt}`
-          + `h2{font-size:${pt}pt;font-weight:bold;margin:16pt 0 8pt}p{margin:0 0 8pt}`
-        : `h1{font-size:${+pt + 7}pt;font-weight:bold;margin:0 0 18pt}`
-          + `h2{font-size:${+pt + 1}pt;font-weight:bold;margin:16pt 0 6pt}p{margin:0 0 10pt}`);
-    /* a numbered layout carries its section numbers into the file, because
-       that is what makes it the document it is. Paragraphs are paragraphs:
-       Word does not number them and neither does this. */
-    let si = 0;
-    const body = t.body.filter(b => (b.h ?? b.p).trim()).map(b => {
-      if (layout === 'letter') return b.h !== undefined ? '' : `<p>${txt(b.p)}</p>`;
-      if (b.h !== undefined) { si++; return `<h2>${layout === 'legal' ? si + '.&nbsp;&nbsp;&nbsp;&nbsp;' : ''}${txt(b.h)}</h2>`; }
-      return `<p>${txt(b.p)}</p>`;
-    }).join('');
-    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8">`
-      + `<title>${esc(t.name || 'Untitled template')}</title><style>${style}</style></head>`
-      + `<body><h1>${esc(t.name || 'Untitled template')}</h1>${body}</body></html>`;
-    const a = h('a', { href: URL.createObjectURL(new Blob(['﻿' + html], { type: 'application/msword' })),
-      download: `${(t.name || 'Untitled template').replace(/[\\/:*?"<>|]+/g, ' ').trim()}.doc` });
-    document.body.append(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    pbToast(`“${t.name || 'Untitled template'}” is downloading for Word`);
-  };
-
   /* ── the panel beside the document ────────────────────────────
      The outline and the fields. It closes to nothing, and keeps its own
      width inside, so it slides out whole instead of being squeezed. */
@@ -2052,28 +2051,26 @@ function templatePage(t, use = false, inChat = false) {
       + (sideHidden() ? ' is-side-hidden' : '') },
     h('div', { class: 'mx-tpl-side-wrap' }, side),
     h('div', { class: 'mx-tpl-main' },
-      h('div', { class: 'mx-tpl-bar' },
+      /* Docked beside its conversation nothing stands over the document
+         at all — the shell's own header says what this is and whether it
+         is published, and the way back to the outline floats at the
+         corner of the view, as the playbook's does. */
+      inChat ? null : h('div', { class: 'mx-tpl-bar' },
         showSideBtn,
-        /* Docked beside its conversation the shell's own header already
-           says what this is and whether it is published, so the bar does
-           not say it again — nothing stands over the document but the
-           way back to the outline and the way out to Word. */
-        inChat ? null
-          : use
-            ? h('span', { class: 'mx-tpl-kind' }, h('span', { class: 'mx-tpl-new' }, `New ${t.name || 'document'}`),
-                h('span', { class: 'mx-dot' }, 'from the template'))
-            : h('span', { class: 'mx-tpl-kind' }, pbStatus(t.status), h('span', { class: 'mx-dot' }, t.kind),
-                h('span', { class: 'mx-dot' }, 'v' + mxTplVer(t)),
-                h('span', { class: 'mx-dot' }, `Used ${mxPlural(t.used, 'time')}`)),
+        use
+          ? h('span', { class: 'mx-tpl-kind' }, h('span', { class: 'mx-tpl-new' }, `New ${t.name || 'document'}`),
+              h('span', { class: 'mx-dot' }, 'from the template'))
+          : h('span', { class: 'mx-tpl-kind' }, pbStatus(t.status), h('span', { class: 'mx-dot' }, t.kind),
+              h('span', { class: 'mx-dot' }, 'v' + mxTplVer(t)),
+              h('span', { class: 'mx-dot' }, `Used ${mxPlural(t.used, 'time')}`)),
         h('span', { class: 'pb-grow' }),
-        !use && !inChat && t.status === 'draft' ? h('button', { class: 'btn', type: 'button',
+        !use && t.status === 'draft' ? h('button', { class: 'btn', type: 'button',
           onclick: () => { t.status = 'live'; t.updated = mxNow(); save(); go('templates'); pbToast(`“${t.name || 'Untitled template'}” is published`); } }, 'Publish') : null,
-        h('button', { class: 'btn mx-word', type: 'button', onclick: toWord },
-          h('img', { src: 'assets/brand/word.svg', alt: '', 'aria-hidden': 'true' }), 'Open in Word'),
         use
           ? h('button', { class: 'btn btn--primary', type: 'button', onclick: draft }, 'Create Draft')
           : null),
       docScroll),
+    inChat ? showSideBtn : null,
     resize);
   side.inert = sideHidden();
   setSideW(inChat ? SIDE_W.base : (state.mxSideW || SIDE_W.base));

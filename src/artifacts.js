@@ -3353,14 +3353,16 @@ function openArtifact(a, { full = false } = {}) {
          sits with the title and takes no box there. Beside a chat the
          panel is too narrow to spend the width: the title would shrink to
          nothing to make room for it. */
-      h('div', { class: 'deck-top-l' }, titleEl, full ? editBtn : null),
+      /* a template's conversation is reached from the list, not from over
+         the document — nothing stands on the page that is not the page */
+      h('div', { class: 'deck-top-l' }, titleEl, full && a.kind !== 'template' ? editBtn : null),
       h('div', { class: 'deck-top-actions' },
         /* versions live on the name in full screen, and comments and the
            full-screen toggle belong to a panel beside a conversation —
            there is no conversation here */
         full ? null : vBtn,
         ...(made.extras || []),
-        full || a.kind === 'agent' ? null : editBtn,
+        full || a.kind === 'agent' || a.kind === 'template' ? null : editBtn,
         full ? null : commentLayer(a, shell),
         /* a draft carries its own destination at the foot, beside Send —
            where it belongs, since sending and exporting are the same

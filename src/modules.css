@@ -281,6 +281,20 @@
 /* the way back to the panel sits where the panel was */
 .mx-show-side { margin-right: 4px; }
 .mx-tpl:not(.is-side-hidden) .mx-show-side { display: none; }
+/* beside a conversation there is no bar to put it in, so it is pinned to
+   the corner of the view — there however far down the document you are,
+   the way the playbook's is */
+.mx-tpl.is-in-chat .mx-show-side {
+  position: absolute; top: 16px; left: 16px; z-index: 3; margin: 0;
+  opacity: 0; visibility: hidden; transform: translateX(-8px);
+  transition: opacity 120ms var(--ease), transform 200ms var(--ease), visibility 0s 120ms;
+}
+.mx-tpl.is-in-chat.is-side-hidden .mx-show-side {
+  display: grid; opacity: 1; visibility: visible; transform: none;
+  transition: opacity 220ms var(--ease) 180ms, transform 340ms var(--pb-open) 140ms, visibility 0s;
+}
+/* and the sheet keeps clear of it */
+.mx-tpl.is-in-chat.is-side-hidden .mx-tpl-doc { padding-left: 62px; padding-right: 62px; }
 @media (prefers-reduced-motion: reduce) { .mx-tpl, .mx-tpl-side { transition: none; } }
 /* the outline and the fields, one under the other, parted by a hairline */
 .mx-tpl-out, .mx-tpl-fields { min-width: 0; }
@@ -359,6 +373,7 @@
 .mx-doc-bar .pbv-find:not(.is-open) .pbv-find-x { display: none; }
 .mx-doc-bar .pbv-bar-ctx { background: #FCFBF9; padding: 0 calc(var(--mx-margin) - 7.5px) 0 var(--mx-margin); }
 .mx-fold-all:disabled { opacity: .35; pointer-events: none; }
+.mx-add-sec { flex: none; font-size: 13px; margin-left: 2px; }
 .mx-doc-h:empty::before, .mx-doc-p:empty::before { content: attr(data-ph); color: var(--text-faint); }
 
 /* ── a section on the sheet ──
@@ -450,9 +465,37 @@
   margin-bottom: 30px !important;
 }
 .is-layout-legal .mx-doc-p { text-align: justify; }
-/* Headed sections — the default, and what a template with no setting is. */
-.is-layout-headed .mx-sec-n { display: none; }
-.is-layout-headed .mx-doc-h { font-weight: 600; }
+/* Headed sections — the house layout, and what a template with no
+   setting is. Set exactly as a playbook's sheet is set, because it is
+   the same sheet doing the same job: a serif heading with its number at
+   the margin, the text ranged left in the app's own face, and a section
+   given room to end before the next one starts. The paper, the face and
+   the size still go into the file Word opens — this is the reading of
+   it, not the printing of it. */
+.mx-doc.is-layout-headed { --mx-page: 754px; --mx-margin: 56px; }
+.mx-tpl.is-in-chat .mx-doc.is-layout-headed { --mx-margin: 34px; }
+.is-layout-headed .mx-doc-in {
+  font-family: var(--font);
+  padding: 30px var(--mx-margin) 28px;
+}
+.is-layout-headed .mx-doc-title {
+  font-family: var(--serif) !important; font-size: 27px !important;
+  font-weight: 400; letter-spacing: -0.012em; line-height: 1.25;
+  text-align: left; text-transform: none;
+  margin-bottom: 34px !important;
+}
+.is-layout-headed .mx-sec { margin-bottom: 38px; }
+.is-layout-headed .mx-sec-head { align-items: baseline; gap: 8px; margin: 0 0 8px; }
+.is-layout-headed .mx-sec-n {
+  font-family: var(--serif); font-size: 19px; font-weight: 400;
+  color: var(--text-faint); width: auto; flex: none;
+}
+.is-layout-headed .mx-doc-h {
+  font-family: var(--serif); font-size: 19px; font-weight: 400;
+  letter-spacing: -0.005em; margin: 0 auto 0 0;
+}
+.is-layout-headed .mx-doc-p { font-family: var(--font); font-size: 14px; line-height: 1.75; margin: 0 0 12px; }
+.is-layout-headed .mx-blk:last-child .mx-doc-p { margin-bottom: 0; }
 /* Plain letter — no headings at all, one paragraph after another. */
 .is-layout-letter .mx-sec-head { display: none; }
 .is-layout-letter .mx-sec { margin-bottom: 0; }
