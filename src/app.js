@@ -3851,7 +3851,7 @@ function taggedPerson(text) {
    moment the artifact gets made. */
 let peerRunning = false;
 
-function answer(prompt) {
+function answer(prompt, files = []) {
   /* a conversation building a skill answers as the skill; a prompt that
      carries a skill runs it (skills.js) */
   if (thread?.id?.startsWith('sk-ses-') && typeof skBuildTurn === 'function') return skBuildTurn(ARTIFACTS[thread.id.slice(7)], prompt);
@@ -3859,6 +3859,9 @@ function answer(prompt) {
   /* a conversation working on a playbook is asked about that playbook */
   const onPb = ARTIFACTS[lastArtifactIn()];
   if (onPb?.kind === 'playbook' && typeof playbookTurn === 'function') return playbookTurn(onPb, prompt);
+  /* and one working on a template is asked about that template — with
+     whatever was handed over in the box */
+  if (onPb?.kind === 'template' && typeof templateTurn === 'function') return templateTurn(onPb, prompt, files);
   /* a conversation building a request answers as the request */
   const onRq = thread?.id?.startsWith('rq-ses-') ? ARTIFACTS[thread.id.slice(7)] : null;
   if ((onRq || onPb)?.kind === 'request' && typeof requestTurn === 'function') return requestTurn(onRq || onPb, prompt);
@@ -4695,11 +4698,14 @@ register('thread', () => {
       people: () => (thread?.people || [])
         .filter(p => p.name !== USER.name)
         .map(p => ({ label: p.name, mark: faceEl(p.name, 'tokface').outerHTML })),
-      onSend: (text) => {
-        say('user', text); paintThread();
+      onSend: (text, { pills } = {}) => {
+        /* a file handed over in the box rides with what was asked, the
+           way it does on the page a thing is first made from */
+        const files = (pills || []).filter(p => p.kind === 'file').map(p => ({ name: p.label }));
+        say('user', text, files.length ? { files } : undefined); paintThread();
         /* switched off, it is a chat between people — unless somebody
            calls it in by name */
-        if (repOn() || /@?assistant\b/i.test(text)) answer(text);
+        if (repOn() || /@?assistant\b/i.test(text)) answer(text, files);
       },
     });
   });

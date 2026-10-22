@@ -322,9 +322,20 @@ function initComposer(askEl, opts = {}) {
       e.stopPropagation();                     // toggles keep the menu open
       const k = b.dataset.t; SRCS[k] = !SRCS[k]; b.classList.toggle('on', SRCS[k]); paintChips();
     }));
+    /* A file handed over in the box rides with what you ask about it —
+       the same pill the pages that make a thing from a file use, so a
+       conversation can be given one too: reformat this like that,
+       bring that clause across. */
     $$('button[data-a]', menu).forEach(b => b.addEventListener('click', e => {
       e.stopPropagation(); openPlus(false);
-      toast('File upload comes in the next pass.');
+      const pick = h('input', { type: 'file', multiple: true, style: 'display:none',
+        accept: '.docx,.doc,.pdf,.txt,.md,.rtf,.odt,.xlsx,.msg' });
+      pick.onchange = () => {
+        for (const f of pick.files) addPill({ kind: 'file', label: f.name, mark: PB_UPLOAD });
+        pick.remove();
+      };
+      document.body.append(pick);
+      pick.click();
     }));
     /* the chip names the verb, so the placeholder asks the rest of the question */
     const HINT = {

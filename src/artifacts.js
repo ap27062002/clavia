@@ -3066,7 +3066,10 @@ function openArtifact(a, { full = false } = {}) {
     h('span', { class: 'deck-title-name' }, a.name),
     h('span', { class: 'caret', 'aria-hidden': 'true' }));
 
-  const titleEl = h('div', { class: 'deck-title' }, full ? nameBtn : nameEl);
+  /* A template's menu would be Rename over a name you can already type
+     into, and Delete over a row that already offers it — so it has no
+     menu, and the name is the name. */
+  const titleEl = h('div', { class: 'deck-title' }, full && a.kind !== 'template' ? nameBtn : nameEl);
 
   /* Rename hands the header back to the same editable name the panelled
      view uses, so there is one way to type a name and not two. */

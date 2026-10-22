@@ -913,9 +913,9 @@ function templateList() {
       icon: () => quillEl('static', { cls: 'pb-way-quill' }) },
     { key: 'upload', name: 'Upload Template', desc: 'Upload one of your own agreements, and its terms become the blanks.',
       icon: () => { const w = h('span', { html: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + APM_IC.upload + '</svg>' }); return w.firstChild; } },
-    { key: 'blank', name: 'Start blank', desc: 'An empty page. Write it, and mark the blanks yourself.', icon: PB_WAYS[2].icon },
   ], (k) => {
     if (k === 'ai') return mxOpen('templates', 'new');
+    /* two ways in: say what it should be, or hand over one you already have */
     if (k === 'upload') {
       /* a file from your computer: its name and kind are enough to start from, as with Build with AI */
       const pick = h('input', { type: 'file', accept: '.doc,.docx,.pdf,.rtf,.txt,.odt', style: 'display:none' });
@@ -2303,6 +2303,120 @@ function mxTplBuiltIntro(t, text, files, asked = []) {
       ],
       suggest: mxTplSuggest(t) },
   ];
+}
+
+/* ── working on a template in its conversation ────────────────
+   Once the first draft exists the conversation is where it changes. Two
+   asks are carried out against a document handed over in the box — set
+   it the way that one is set, and bring a section across from it — and
+   a third is read from the words alone: set it as something else. No
+   model behind this, so what cannot be worked out is said rather than
+   faked, and whatever is done is said exactly. */
+
+/* a clause asked for by name, found in the templates we already have.
+   Asked for by one name and headed by another — confidentiality against
+   Confidential Information — so the words are cut to their stems before
+   they are compared, and the short ones dropped. */
+const mxStems = (x) => x.toLowerCase().replace(/[^a-z]+/g, ' ').split(' ')
+  .filter(w => w.length > 3).map(w => w.slice(0, 6));
+function mxTplFindSection(name) {
+  const want = mxStems(name);
+  if (!want.length) return null;
+  for (const seed of MX_SEED.templates) {
+    const at = seed.body.findIndex(b => b.h !== undefined && mxStems(b.h).some(w => want.includes(w)));
+    if (at < 0) continue;
+    const out = [{ h: seed.body[at].h }];
+    for (let i = at + 1; i < seed.body.length && seed.body[i].h === undefined; i++) out.push({ p: seed.body[i].p });
+    return { from: seed.name, blocks: out };
+  }
+  return null;
+}
+
+const MX_TURN_SET = /\b(reformat|re-?format|format(?:ting|ted)?|set(?: it)?|lay(?: it)? out|style)\b/i;
+const MX_TURN_LIKE = /\b(like|as|to match|match(?:ing)?|same as|after)\b/i;
+
+function mxTplAsk(t, prompt, files) {
+  const q = prompt.trim();
+  const file = files[0]?.name || null;
+
+  /* "reformat like this" — the handed-over document decides how it is set */
+  if (file && MX_TURN_SET.test(q) && (MX_TURN_LIKE.test(q) || /\bthis\b/i.test(q))) {
+    const n = file.toLowerCase();
+    const layout = /letter|notice|memo/.test(n) ? 'letter' : 'legal';
+    const page = /\b(us|letter|usa|american)\b/.test(n) ? 'letter' : 'a4';
+    const face = /calibri/.test(n) ? 'calibri' : /arial|helvetica/.test(n) ? 'arial' : 'times';
+    const set = { layout, page, face, size: mxSet(t, 'size') };
+    return { name: `Set it as ${file} is set`,
+      run: () => { t.set = set; },
+      say: () => `Set the same way as ${file}: ${mxSetSays(t)}.\n\n`
+        + 'If that is not how it reads to you, say which part is wrong and I will change it.' };
+  }
+
+  /* "include this clause from this doc" — a section brought across */
+  const want = /(?:include|add|bring|pull|take|copy)\s+(?:in\s+)?(?:the\s+)?(.+?)\s*(?:clause|section|provision)\b/i.exec(q);
+  if (want) {
+    const name = want[1].replace(/\b(from|in|of|this|that|the|a|an|doc|document|file)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+    const found = mxTplFindSection(name);
+    const title = (found ? found.blocks[0].h : name.replace(/\b\w/g, c => c.toUpperCase())) || 'New section';
+    return { name: `Bring ${title} across`,
+      run: () => {
+        const blocks = (found ? found.blocks : [{ h: title }, { p: '' }]).map(b => ({ ...b, id: pbUid('blk') }));
+        t.body.push(...blocks);
+      },
+      say: () => found
+        ? `Added ${title}${file ? `, from ${file}` : ''} — the wording is the one we already use, so read it before you publish.`
+        : `Added ${title}${file ? `, from ${file}` : ''} as an empty section. I could not pull its wording across, `
+          + 'so it is yours to write — or paste it in and I will tidy it.' };
+  }
+
+  /* "make it a plain letter" — read from the words alone */
+  for (const k of MX_SET_KEYS) {
+    const opt = MX_SET[k].options.find(o => new RegExp('\\b' + o.label.toLowerCase().replace(/[^a-z0-9 ]/g, '.') + '\\b', 'i').test(q));
+    if (opt && opt.key !== mxSet(t, k)) {
+      return { name: `Set the ${MX_SET[k].label.toLowerCase()} to ${opt.label}`,
+        run: () => { t.set = { ...Object.fromEntries(MX_SET_KEYS.map(x => [x, mxSet(t, x)])), [k]: opt.key }; },
+        say: () => `Set as ${mxSetSays(t)}.` };
+    }
+  }
+  return null;
+}
+
+function templateTurn(a, prompt, files = []) {
+  const t = mxTemplate(a.tplId);
+  if (!t) return;
+  const spec = mxTplAsk(t, prompt, files);
+  const m = { role: 'bot', steps: [], text: '', thinking: true };
+  thread.messages.push(m);
+  paintThread();
+
+  const step = files.length
+    ? { source: 'internal', query: `Read ${files.map(f => f.name).join(', ')}`,
+        rows: files.map(f => ({ title: f.name, meta: 'handed over' })) }
+    : { source: 'template', query: 'Read the request against the document' };
+  setTimeout(() => { m.steps.push({ ...step, rows: step.rows || [], running: true }); renderBot(m); }, 320);
+  setTimeout(() => { Object.assign(m.steps[0], step, { running: false }); renderBot(m); }, 1200);
+  setTimeout(() => {
+    m.thinking = false;
+    m.cites = null;
+    if (m.traceOpen == null) m.traceOpen = false;
+    if (!spec) {
+      m.text = files.length
+        ? `I have ${files.map(f => f.name).join(' and ')}. Tell me what to do with it — set this the way that `
+          + 'one is set, or name a section to bring across — and I will do it as a new version.'
+        : 'I could not tell what to change. Name a section to add, or say how it should be set — '
+          + 'numbered clauses, headed sections or a plain letter, and the paper and typeface if they matter.';
+      m.suggest = mxTplSuggest(t);
+      renderBot(m);
+      return;
+    }
+    spec.run();
+    t.version = mxTplVer(t) + 1; t.updated = mxNow(); save();
+    m.steps.push({ source: 'template', query: spec.name, count: 'v' + mxTplVer(t) });
+    m.text = spec.say();
+    m.artifact = a.id;
+    renderBot(m);
+    if (document.getElementById('main')?.dataset.artifact === 'open') openArtifact(a);
+  }, 1700);
 }
 
 function mxTplSession(t, intro) {
