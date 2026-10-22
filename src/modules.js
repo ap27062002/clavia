@@ -942,15 +942,16 @@ function templateFrom(text, name) {
   return { name: clean || seed.name, kind: seed.kind, description: seed.description,
     fields: structuredClone(seed.fields), body: structuredClone(seed.body) };
 }
-/* It says what it is doing while it does it, and what it has made opens in
-   a conversation with the template beside it — the same way a playbook
-   arrives (buildPlaybook in playbooks.js). */
+/* It says what it is doing while it does it, and then stops: how a
+   document is set cannot be read off the ask, and setting it wrong wastes
+   the draft. So the conversation opens on that one question, and the
+   template is drafted — and kept — the way you answer it. (A playbook has
+   nothing to ask, so buildPlaybook in playbooks.js goes straight through.) */
 function buildTemplate(text, files, step) {
   const from = text || files.join(' ');
   const steps = [
     files.length ? `Reading ${files.length === 1 ? files[0] : files.length + ' files'}` : 'Reading your description',
     'Working out the sections it needs',
-    'Drafting it, and naming the blanks',
   ];
   let i = 0;
   const tick = () => {
@@ -959,11 +960,52 @@ function buildTemplate(text, files, step) {
     setTimeout(() => {
       if (state.view !== 'templates' || MX.templates.open !== 'new') return;   // left while it was writing
       const t = newTemplate(templateFrom(from, text ? null : files[0]), true, false);
-      mxTplEditInChat(t, mxTplBuiltIntro(t, text, files));
+      mxTplEditInChat(t, mxTplAskFormat(t, text, files), true);
     }, 800);
   };
   tick();
 }
+
+/* the one question, and what answering it does: the template is set that
+   way, the draft is described, and the document opens beside it */
+function mxTplAskFormat(t, text, files) {
+  return [
+    { role: 'user', text: text || `Make a template from ${files.join(', ')}.`,
+      files: files.length ? files.map(name => ({ name })) : null },
+    { role: 'bot', cites: null, artifact: null,
+      answer: `I have the sections for ${t.name || 'the template'}. One thing before I set it down.`,
+      steps: [
+        files.length
+          ? { source: 'internal', query: `Read ${files.length === 1 ? 'the file you gave it' : 'the files you gave it'}`,
+              rows: files.map(name => ({ title: name, meta: 'reference' })) }
+          : { source: 'think', query: 'Read what the document is for' },
+      ],
+      choice: {
+        question: 'How should the document be set?',
+        options: MX_FORMATS.map(f => ({ key: f.key, label: f.name, desc: f.desc })),
+        onPick: (key, opt) => {
+          t.format = key; t.updated = mxNow(); save();
+          say('user', opt.label);
+          for (const m of mxTplBuiltIntro(t, text, files).slice(1)) say('bot', m.answer, { ...m, text: m.answer, thinking: false });
+          paintThread();
+          queueMicrotask(() => openArtifact(mxTplArtifact(t)));
+        },
+      } },
+  ];
+}
+
+/* How a document is laid out. A template keeps the one it was drafted
+   in; everything shipped predates the question, so it is headed. */
+const MX_FORMATS = [
+  { key: 'legal', name: 'Numbered clauses',
+    desc: 'The title centred in caps, clauses numbered 1 then 1.1 down the page, the text justified. How an agreement is usually set.' },
+  { key: 'headed', name: 'Headed sections',
+    desc: 'A heading over each section and the text ranged left. Easier to read on screen than to sign.' },
+  { key: 'letter', name: 'Plain letter',
+    desc: 'No headings and no numbers — one paragraph after another, the way a notice or a cover letter is written.' },
+];
+const mxFormat = (t) => MX_FORMATS.find(f => f.key === t.format) ? t.format : 'headed';
+const mxFormatName = (t) => MX_FORMATS.find(f => f.key === mxFormat(t)).name;
 
 const mxFieldLabel = (t, key) => t.fields.find(f => f.key === key)?.label || key;
 
@@ -1856,7 +1898,7 @@ function templatePage(t, use = false, inChat = false) {
         { keyboard: e.detail === 0, small: true }); } },
       icon('plus', 'ico ico-14')));
 
-  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') }, docBar,
+  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + ' is-fmt-' + mxFormat(t) }, docBar,
     h('div', { class: 'mx-doc-in' },
       use ? h('h1', { class: 'mx-doc-title' }, t.name || 'Untitled template') : title, docBody, nomatch));
   /* a blank in the document and its field find each other */
@@ -1961,14 +2003,32 @@ function templatePage(t, use = false, inChat = false) {
     queueMicrotask(() => openArtifact(a));
   };
 
-  /* ── Open in Word: the template as it stands, filled where it is filled, as a file Word opens ── */
+  /* ── Open in Word: the template as it stands, filled where it is
+     filled, set the way it is set on the page, as a file Word opens ── */
   const toWord = () => {
     const esc = (x) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const txt = (x) => esc(x).replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => esc(vals[k]?.trim() || `[${mxFieldLabel(t, k)}]`));
-    const body = t.body.filter(b => (b.h ?? b.p).trim()).map(b => b.h !== undefined ? `<h2>${txt(b.h)}</h2>` : `<p>${txt(b.p)}</p>`).join('');
+    const fmt = mxFormat(t);
+    const style = fmt === 'legal'
+      ? 'body{font-family:Arial,sans-serif;font-size:10.5pt;line-height:1.5;text-align:justify}'
+        + 'h1{font-size:11pt;font-weight:bold;text-align:center;text-transform:uppercase;margin:0 0 22pt}'
+        + 'h2{font-size:10.5pt;font-weight:bold;margin:16pt 0 8pt}p{margin:0 0 8pt}'
+      : fmt === 'letter'
+        ? 'body{font-family:Arial,sans-serif;font-size:11pt;line-height:1.6}'
+          + 'h1{font-size:13pt;font-weight:bold;margin:0 0 18pt}p{margin:0 0 12pt}'
+        : 'body{font-family:Georgia,serif;font-size:12pt;line-height:1.5}'
+          + 'h1{font-size:20pt;font-weight:normal;margin:0 0 18pt}h2{font-size:12pt;margin:18pt 0 6pt}p{margin:0 0 10pt}';
+    /* numbered clauses carry their numbers into the file, because that is
+       what makes it the document it is */
+    let si = 0, ci = 0;
+    const body = t.body.filter(b => (b.h ?? b.p).trim()).map(b => {
+      if (fmt === 'letter') return b.h !== undefined ? '' : `<p>${txt(b.p)}</p>`;
+      if (b.h !== undefined) { si++; ci = 0; return `<h2>${fmt === 'legal' ? si + '&nbsp;&nbsp;&nbsp;&nbsp;' : ''}${txt(b.h)}</h2>`; }
+      ci++;
+      return `<p>${fmt === 'legal' && si ? `${si}.${ci}&nbsp;&nbsp;&nbsp;&nbsp;` : ''}${txt(b.p)}</p>`;
+    }).join('');
     const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8">`
-      + `<title>${esc(t.name || 'Untitled template')}</title><style>body{font-family:Georgia,serif;font-size:12pt;line-height:1.5}`
-      + `h1{font-size:20pt;font-weight:normal;margin:0 0 18pt}h2{font-size:12pt;margin:18pt 0 6pt}p{margin:0 0 10pt}</style></head>`
+      + `<title>${esc(t.name || 'Untitled template')}</title><style>${style}</style></head>`
       + `<body><h1>${esc(t.name || 'Untitled template')}</h1>${body}</body></html>`;
     const a = h('a', { href: URL.createObjectURL(new Blob(['﻿' + html], { type: 'application/msword' })),
       download: `${(t.name || 'Untitled template').replace(/[\\/:*?"<>|]+/g, ' ').trim()}.doc` });
@@ -2219,7 +2279,8 @@ function mxTplBuiltIntro(t, text, files) {
       files: files.length ? files.map(name => ({ name })) : null },
     { role: 'bot', cites: null,
       answer: `Drafted ${t.name || 'the template'} — ${mxPlural(mxTplSecs(t), 'section')}, `
-        + `with ${mxPlural(t.fields.length, 'blank')} named and ready to fill.\n\n`
+        + `with ${mxPlural(t.fields.length, 'blank')} named and ready to fill, `
+        + `set as ${mxFormatName(t).toLowerCase()}.\n\n`
         + 'It is a draft: read it before you publish it. Tell me what to add, cut or word '
         + 'differently, and I will change it as a new version.',
       steps: [
@@ -2260,10 +2321,12 @@ function mxTplSessionRoute(id) {
   mxTplEditInChat(t);
   return true;
 }
-function mxTplEditInChat(t, intro) {
+/* hold = the document is not shown yet: the conversation has a question
+   to ask first, and the answer decides how the document is set */
+function mxTplEditInChat(t, intro, hold) {
   MX.templates.open = null;
   openSession(mxTplSession(t, intro));
-  queueMicrotask(() => openArtifact(mxTplArtifact(t)));
+  if (!hold) queueMicrotask(() => openArtifact(mxTplArtifact(t)));
 }
 
 /* ── registering the kind ─────────────────────────────────────── */

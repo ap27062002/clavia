@@ -243,6 +243,8 @@
 .mx-tpl.is-in-chat .mx-doc-bar .pbv-bar-ctx { padding: 0 20px 0 30px; }
 .mx-tpl.is-in-chat .mx-doc-title { font-size: 24px !important; }
 .mx-tpl.is-in-chat .mx-blk-n, .mx-tpl.is-in-chat .mx-blk-del { display: none; }
+/* except where the numbers are the document rather than a handle on it */
+.mx-tpl.is-in-chat .is-fmt-legal .mx-blk-n { display: block; }
 
 .mx-tpl {
   position: relative;
@@ -414,6 +416,66 @@
   opacity: 0; overflow: hidden; margin-bottom: 0;
   transition: height 240ms var(--ease), opacity 160ms var(--ease), margin 240ms var(--ease);
 }
+/* ══ How the document is set ══════════════════════════════════════
+   A template is a document somebody will open in Word, so it can be
+   laid out the way the agreement itself will be. Three settings; the
+   one chosen when it was drafted is the one it is kept in.
+
+   Numbered clauses — an agreement as it is usually set: the title
+   centred in caps, the clauses numbered 1 then 1.1 down the page, the
+   text justified, in the sans a Word document is written in. */
+/* a page, not a card: square corners and a hairline, the way a sheet of
+   A4 sits on a desk */
+.mx-doc.is-fmt-legal { max-width: 816px; border-radius: 2px; box-shadow: 0 1px 2px rgba(20,20,19,.04), 0 18px 40px -30px rgba(20,20,19,.22); }
+.mx-doc.is-fmt-legal .mx-doc-bar { border-radius: 2px 2px 0 0; }
+.mx-doc.is-fmt-legal .mx-doc-in {
+  padding: 72px 96px 96px;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.mx-tpl.is-in-chat .mx-doc.is-fmt-legal .mx-doc-in { padding: 44px 52px 64px; }
+.is-fmt-legal .mx-doc-title {
+  font-family: Arial, Helvetica, sans-serif !important;
+  font-size: 14px !important; font-weight: 700; letter-spacing: .02em;
+  text-align: center; text-transform: uppercase; line-height: 1.5;
+  margin-bottom: 30px !important;
+}
+.is-fmt-legal .mx-doc-p {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 13.5px; line-height: 1.5; text-align: justify;
+  margin: 0 0 11px;
+}
+.is-fmt-legal .mx-sec { margin-bottom: 18px; }
+.is-fmt-legal .mx-sec-head { align-items: baseline; gap: 0; margin-bottom: 10px; }
+.is-fmt-legal .mx-sec-n {
+  font-family: Arial, Helvetica, sans-serif; font-size: 13.5px; font-weight: 700;
+  color: var(--text); width: 66px; flex: none;
+}
+.is-fmt-legal .mx-sec-head .mx-doc-h {
+  font-family: Arial, Helvetica, sans-serif; font-size: 13.5px; font-weight: 700;
+  letter-spacing: 0; margin: 0 auto 0 0;
+}
+/* the clause numbers are printed, not a hover affordance: they are part
+   of how the document reads */
+.is-fmt-legal .mx-sec-body { padding-left: 66px; }
+.is-fmt-legal .mx-blk-n {
+  position: absolute; left: -66px; top: 0; width: 58px; text-align: left;
+  font-family: Arial, Helvetica, sans-serif; font-size: 13.5px; line-height: 1.5;
+  color: var(--text); opacity: 1;
+}
+.is-fmt-legal .mx-sec.is-pre .mx-sec-body { padding-left: 0; }
+.is-fmt-legal .mx-blk-del { right: -30px; }
+.is-fmt-legal .mx-chip { font-family: Arial, Helvetica, sans-serif; }
+
+/* Headed sections — the way it reads here: a serif heading, the text
+   ranged left. (The default, and what every template shipped with.) */
+/* Plain letter — no headings and no numbers, one paragraph after
+   another, as a notice or a cover letter is written. */
+.is-fmt-letter .mx-sec-head { display: none; }
+.is-fmt-letter .mx-sec-body { padding-left: 0; }
+.is-fmt-letter .mx-sec { margin-bottom: 0; }
+.is-fmt-letter .mx-doc-p { margin-bottom: 14px; }
+.is-fmt-letter .mx-blk-n { display: none; }
+
 /* ── what a search found ──
    The words are in the document itself, so the browser's own highlight
    tints them where they stand, and the one you are on is tinted apart. */
@@ -523,6 +585,7 @@
   .mx-doc-bar { padding: 0 20px 0 28px; }
   .mx-doc-bar .pbv-bar-ctx { padding: 0 20px 0 28px; }
   .mx-blk-n, .mx-blk-del { display: none; }
+  .is-fmt-legal .mx-blk-n { display: block; }
 }
 @media (prefers-reduced-motion: reduce) {
   .mx-size.is-reading, .mx-rev-td.is-reading::after { animation: none; }

@@ -1082,6 +1082,8 @@ const seededBot = (m, ses) => ({
   artifact: 'artifact' in m ? m.artifact : ses.artifact,
   inline: m.inline || null, traceOpen: false,
   suggest: m.suggest || null,
+  /* a question the answer cannot be given without */
+  choice: m.choice || null,
 });
 
 function openSession(ses) {
@@ -3710,6 +3712,7 @@ function renderBot(m) {
       el.append(h('div', { class: 'msg-inline' }, RENDER[a.kind](a, { inline: true })));
     } else if (m.artifact) el.append(artifactCard(m.artifact));
     el.append(msgActions(m));
+    if (m.choice) el.append(askCard(m));
     if (m.suggest?.length) el.append(suggestList(m));
     /* the header total is the sum of these, so it moves when one lands,
        and so does what the chat has made */
@@ -3917,6 +3920,34 @@ function answer(prompt) {
    stays quiet and every turn still has its handles */
 /* Where to go next, offered under the answer. Each one is a message you
    could have typed; picking it sends it, and the list goes. */
+/* ── a question that has to be answered before the work can go on ──
+   Some things cannot be guessed from the ask, and guessing them wastes
+   the turn. The answer stops and asks, with the choices laid out and
+   what each one means. Picked, the card settles into the answer you
+   gave, so the thread still reads as a conversation afterwards. */
+function askCard(m) {
+  const c = m.choice;
+  const box = h('div', { class: 'msg-ask' + (c.picked ? ' is-answered' : '') });
+  const paint = () => {
+    const chosen = c.picked && c.options.find(o => o.key === c.picked);
+    box.classList.toggle('is-answered', !!chosen);
+    box.replaceChildren(
+      h('div', { class: 'msg-ask-q' }, c.question),
+      ...(chosen
+        ? [h('div', { class: 'msg-ask-said' },
+            h('span', { class: 'msg-ask-tick', 'aria-hidden': 'true', html: '<svg viewBox="0 0 16 16" fill="none" '
+              + 'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+              + '<path d="M3.5 8.5l3 3 6-6.5"/></svg>' }),
+            h('span', {}, chosen.label))]
+        : c.options.map(o => h('button', { class: 'msg-ask-opt', type: 'button',
+            onclick: () => { c.picked = o.key; paint(); c.onPick?.(o.key, o); } },
+            h('span', { class: 'msg-ask-l' }, o.label),
+            o.desc ? h('span', { class: 'msg-ask-d' }, o.desc) : null))));
+  };
+  paint();
+  return box;
+}
+
 function suggestList(m) {
   const box = h('div', { class: 'sugg' },
     h('div', { class: 'sugg-h' }, 'Suggestions'),

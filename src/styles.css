@@ -6688,6 +6688,26 @@ body[data-bare] .br-pane { display: none; }
 .cx-g { width: 15px; height: 15px; display: block; }
 
 /* ── where to go next, under an answer ── */
+/* ── a question the answer stopped to ask ──
+   A quiet card, not a dialog: it sits in the thread where the answer
+   would have been. Each choice says what it is and what it means. */
+.msg-ask { margin-top: 18px; max-width: 560px; }
+.msg-ask-q { font-size: 14px; color: var(--text); padding: 0 0 10px; }
+.msg-ask-opt {
+  appearance: none; cursor: pointer; font: inherit; text-align: left;
+  display: block; width: 100%; padding: 10px 13px; margin: 0 0 6px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 11px;
+  transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.msg-ask-opt:hover, .msg-ask-opt:focus-visible { border-color: var(--line-strong); background: var(--tint); }
+.msg-ask-l { display: block; font-size: 13.5px; font-weight: 550; color: var(--text); }
+.msg-ask-d { display: block; margin-top: 2px; font-size: 12.5px; line-height: 1.5; color: var(--text-soft); }
+/* answered, it keeps the question and what you said, and nothing else */
+.msg-ask.is-answered .msg-ask-q { color: var(--text-soft); padding-bottom: 6px; }
+.msg-ask-said { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; color: var(--text); }
+.msg-ask-tick { width: 15px; height: 15px; flex: none; color: var(--pos-preferred, #2E7D52); }
+.msg-ask-tick svg { width: 15px; height: 15px; display: block; }
+
 .sugg { margin-top: 22px; }
 .sugg-h { font-size: 13px; font-weight: 500; color: var(--text); padding: 0 0 6px; }
 .sugg-it {
