@@ -238,8 +238,7 @@
 /* the document has a column, not a page, so it gives its margins back */
 .mx-tpl.is-in-chat .mx-tpl-doc { padding: 4px 14px 56px; }
 .mx-tpl.is-in-chat.is-side-hidden .mx-tpl-doc { padding-left: 30px; padding-right: 30px; }
-.mx-tpl.is-in-chat .mx-doc-bar { padding: 0 20px 0 30px; }
-.mx-tpl.is-in-chat .mx-doc-bar .pbv-bar-ctx { padding: 0 20px 0 30px; }
+
 .mx-tpl.is-in-chat .mx-blk-del { display: none; }
 
 .mx-tpl {
@@ -343,7 +342,11 @@
 .mx-doc-bar {
   position: sticky; top: -4px; z-index: 2;
   display: flex; align-items: center; gap: 8px;
-  height: 44px; padding: 0 48px 0 56px;
+  /* Both columns of ink end where the text ends. The bar's glyphs sit in
+     a 30px box and a section's chevron in a 26px one, so each is pulled
+     out by its own inset — otherwise the boxes line up and the marks in
+     them do not, which is the thing you actually see. */
+  height: 44px; padding: 0 calc(var(--mx-margin) - 7.5px) 0 var(--mx-margin);
   background: rgba(255,255,255,.95); backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--line-soft); border-radius: 14px 14px 0 0;
   transition: box-shadow 220ms var(--ease);
@@ -354,7 +357,7 @@
    way entirely, so nothing can overflow the 32px and push the glass off it */
 .mx-doc-bar .pbv-find:not(.is-open) .pbv-find-ct,
 .mx-doc-bar .pbv-find:not(.is-open) .pbv-find-x { display: none; }
-.mx-doc-bar .pbv-bar-ctx { background: #FCFBF9; }
+.mx-doc-bar .pbv-bar-ctx { background: #FCFBF9; padding: 0 calc(var(--mx-margin) - 7.5px) 0 var(--mx-margin); }
 .mx-fold-all:disabled { opacity: .35; pointer-events: none; }
 .mx-doc-h:empty::before, .mx-doc-p:empty::before { content: attr(data-ph); color: var(--text-faint); }
 
@@ -364,7 +367,7 @@
 .mx-sec:last-child { margin-bottom: 0; }
 .mx-sec[hidden], .mx-blk[hidden] { display: none; }
 .mx-sec-head .pbv-icon { align-self: center; }
-.mx-sec-fold { order: 3; margin: 0 6px 0 0; }
+.mx-sec-fold { order: 3; margin: 0 -6.5px 0 0; }
 .mx-sec-fold svg { width: 13px; height: 13px; transform: rotate(90deg); transition: transform 240ms var(--pb-open); }
 .mx-sec.is-folded .mx-sec-fold svg { transform: none; }
 .mx-sec-tool { opacity: 0; order: 2; margin: 0 -4px 0 0; }
@@ -397,6 +400,9 @@
    screen is the page that comes out of it: the paper it is for, the
    face it is set in, the size it is set at, and how it is laid out. */
 .mx-doc { --mx-page: 794px; --mx-margin: 96px; }
+/* beside a conversation the page cannot afford an inch of white on each
+   side, so the margin narrows and everything set from it comes with it */
+.mx-tpl.is-in-chat .mx-doc { --mx-margin: 48px; }
 .is-page-a4 { --mx-page: 794px; }        /* 210mm at 96dpi */
 .is-page-letter { --mx-page: 816px; }    /* 8.5in */
 .is-page-a3 { --mx-page: 1123px; }       /* 297mm */
@@ -412,7 +418,6 @@
 .mx-doc { border-radius: 4px; }
 .mx-doc .mx-doc-bar { border-radius: 4px 4px 0 0; }
 .mx-doc-in { padding: var(--mx-margin) var(--mx-margin) calc(var(--mx-margin) * 1.2); }
-.mx-tpl.is-in-chat .mx-doc-in { padding: 44px 48px 60px; }
 .mx-doc-in, .mx-doc-in .mx-doc-p, .mx-doc-in .mx-doc-h, .mx-doc-in .mx-doc-title { font-family: inherit; }
 .mx-doc-p { font-size: var(--mx-pt, 14.7px); line-height: 1.5; margin: 0 0 11px; color: var(--text); outline: 0; }
 .mx-doc-h { font-size: var(--mx-pt, 14.7px); font-weight: 700; letter-spacing: 0; margin: 0; outline: 0;
@@ -558,9 +563,7 @@
 @media (max-width: 980px) {
   .mx-req-grid { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .mx-req-side { position: static; }
-  .mx-doc-in { padding: 26px 28px 40px; }
-  .mx-doc-bar { padding: 0 20px 0 28px; }
-  .mx-doc-bar .pbv-bar-ctx { padding: 0 20px 0 28px; }
+  .mx-doc { --mx-margin: 28px; }
   .mx-blk-del { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -2054,14 +2054,17 @@ function templatePage(t, use = false, inChat = false) {
     h('div', { class: 'mx-tpl-main' },
       h('div', { class: 'mx-tpl-bar' },
         showSideBtn,
-        use
-          ? h('span', { class: 'mx-tpl-kind' }, h('span', { class: 'mx-tpl-new' }, `New ${t.name || 'document'}`),
-              h('span', { class: 'mx-dot' }, 'from the template'))
-          /* beside a chat the bar is half as wide, so how often it has been
-             used — the least pressing of the four — stays on the page */
-          : h('span', { class: 'mx-tpl-kind' }, pbStatus(t.status), h('span', { class: 'mx-dot' }, t.kind),
-              h('span', { class: 'mx-dot' }, 'v' + mxTplVer(t)),
-              inChat ? null : h('span', { class: 'mx-dot' }, `Used ${mxPlural(t.used, 'time')}`)),
+        /* Docked beside its conversation the shell's own header already
+           says what this is and whether it is published, so the bar does
+           not say it again — nothing stands over the document but the
+           way back to the outline and the way out to Word. */
+        inChat ? null
+          : use
+            ? h('span', { class: 'mx-tpl-kind' }, h('span', { class: 'mx-tpl-new' }, `New ${t.name || 'document'}`),
+                h('span', { class: 'mx-dot' }, 'from the template'))
+            : h('span', { class: 'mx-tpl-kind' }, pbStatus(t.status), h('span', { class: 'mx-dot' }, t.kind),
+                h('span', { class: 'mx-dot' }, 'v' + mxTplVer(t)),
+                h('span', { class: 'mx-dot' }, `Used ${mxPlural(t.used, 'time')}`)),
         h('span', { class: 'pb-grow' }),
         !use && !inChat && t.status === 'draft' ? h('button', { class: 'btn', type: 'button',
           onclick: () => { t.status = 'live'; t.updated = mxNow(); save(); go('templates'); pbToast(`“${t.name || 'Untitled template'}” is published`); } }, 'Publish') : null,
