@@ -27,7 +27,7 @@ const MX = {
      on the page, chatSideHidden: the same beside a conversation, where
      there is less room and the document has it to start with */
   templates: { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, values: {},
-               fold: {}, sideHidden: false, chatSideHidden: true },
+               fold: {}, sideHidden: false, chatSideHidden: true, aboutHidden: true },
   requests:  { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } } },
   projects:  { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, items: {} },
   agents:    { open: null },   // 'new', 'build', 'build/done', or an agent's id
@@ -1072,6 +1072,70 @@ function mxTplDuplicate(t) {
   mxClose('templates'); go('templates');
 }
 
+/* ── what this template is, for somebody who is not a lawyer ──
+   The document itself answers "what does it say". This answers the
+   questions somebody reaches for it with: what is it, what is in it,
+   has it been used before, and what do I do now. */
+
+/* the requests whose paper came off this template */
+function mxTplUses(t) {
+  let reqs = [];
+  try { reqs = mxIntake() || []; } catch { return []; }
+  const out = [];
+  for (const r of reqs) {
+    let docs = [];
+    try { docs = mxDocuments(r) || []; } catch { continue; }
+    if (docs.some(x => x.source === t.id)) out.push(r);
+  }
+  return out.sort((a, b) => String(b.updated || '').localeCompare(String(a.updated || '')));
+}
+
+function mxTplAbout(t, onHide) {
+  const secs = t.body.filter(b => b.h !== undefined && b.h.trim());
+  const uses = mxTplUses(t);
+  const blank = (s) => (s || '').replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => mxFieldLabel(t, k));
+  const line = (label, value) => h('div', { class: 'mx-ab-row' },
+    h('span', { class: 'mx-ab-k' }, label), h('span', { class: 'mx-ab-v' }, value));
+  return h('aside', { class: 'mx-tpl-about' },
+    h('div', { class: 'mx-tpl-side-head' },
+      h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, 'About')),
+      h('span', { class: 'pb-grow' }),
+      h('button', { class: 'pbv-icon', type: 'button', 'aria-label': 'Hide this',
+        'data-tip': 'Hide About', html: PBV_PANEL, onclick: onHide })),
+    h('div', { class: 'mx-ab' },
+      h('h2', { class: 'mx-ab-name' }, t.name || 'Untitled template'),
+      line('Type', t.kind || 'Agreement'),
+      line('Status', t.status === 'live' ? 'Published — ready to use' : 'A draft, not published yet'),
+      t.description ? h('p', { class: 'mx-ab-p' }, t.description) : null,
+
+      h('div', { class: 'mx-ab-sec' },
+        h('h3', { class: 'mx-ab-h' }, `What is in it`),
+        secs.length
+          ? h('ol', { class: 'mx-ab-list' }, ...secs.map(b => h('li', {}, blank(b.h))))
+          : h('p', { class: 'mx-ab-none' }, 'Nothing written in it yet.')),
+
+      h('div', { class: 'mx-ab-sec' },
+        h('h3', { class: 'mx-ab-h' }, 'What you will be asked for'),
+        t.fields.length
+          ? h('ul', { class: 'mx-ab-chips' }, ...t.fields.map(f => h('li', {}, f.label)))
+          : h('p', { class: 'mx-ab-none' }, 'Nothing — it has no blanks to fill.')),
+
+      h('div', { class: 'mx-ab-sec' },
+        h('h3', { class: 'mx-ab-h' }, 'Where it has been used'),
+        uses.length
+          ? h('ul', { class: 'mx-ab-uses' }, ...uses.slice(0, 5).map(r => h('li', {},
+              h('button', { class: 'mx-ab-use', type: 'button', onclick: () => { closeArtifact?.(); mxOpen('intake', r.id); } },
+                h('span', { class: 'mx-ab-use-t' }, r.counterparty || r.title),
+                h('span', { class: 'mx-ab-use-s' }, `${r.id} · ${pbWhen(r.updated)}`)))))
+          : h('p', { class: 'mx-ab-none' }, 'Not used on anything yet.'),
+        t.used ? h('p', { class: 'mx-ab-foot' }, `Used ${mxPlural(t.used, 'time')} in all.`) : null),
+
+      h('button', { class: 'btn btn--primary mx-ab-go', type: 'button',
+        onclick: () => { closeArtifact?.(); requestForm({ templates: [t.id], how: 'template' }); } },
+        'Start intake'),
+      h('p', { class: 'mx-ab-note' }, 'Legal picks it up from there — you will be asked who it is with and the few things only you know.')));
+}
+
 /* ── Open in Word ─────────────────────────────────────────────
  The template as it stands, filled where it is filled, set the way it
  is set on the page, as a file Word opens. It is reached from the
@@ -1893,6 +1957,10 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     onclick: () => scrollTo_(docBody.querySelector(`.mx-sec[data-id="${ctx.dataset.sec}"]`)) }, ctxN, ctxT);
   const showSideBtn = h('button', { class: 'pbv-icon pbv-panel-btn mx-show-side', type: 'button', 'aria-label': 'Show the outline',
     'data-tip': 'Show Outline', html: PBV_PANEL, onclick: () => showSide(true) });
+  /* the same control at the other corner: what this template is, for
+     somebody who has to use it rather than write it */
+  const showAboutBtn = h('button', { class: 'pbv-icon pbv-panel-btn mx-show-about', type: 'button', 'aria-label': 'What this is',
+    'data-tip': 'What This Is', html: PBV_PANEL, onclick: () => showAbout(true) });
   const docBar = h('div', { class: 'mx-doc-bar' },
     h('span', { class: 'pbv-bar-t' }, 'Sections'), count,
     h('div', { class: 'pbv-bar-sub' }, ctx),
@@ -2080,14 +2148,25 @@ function templatePage(t, use = false, shell = false, frozen = false) {
       addEventListener('pointercancel', up);
     } });
   const sideHidden = () => inChat ? MX.templates.chatSideHidden : MX.templates.sideHidden;
+  const aboutHidden = () => MX.templates.aboutHidden;
+  function showAbout(on) {
+    MX.templates.aboutHidden = !on;
+    about.inert = !on;
+    page.classList.toggle('is-about-hidden', !on);
+  }
   function showSide(on) {
     if (inChat) MX.templates.chatSideHidden = !on; else MX.templates.sideHidden = !on;
     side.inert = !on;
     page.classList.toggle('is-side-hidden', !on);
   }
 
+  /* Only where the document has the screen. Docked beside a chat there
+     is no room for it, and the conversation is already the place to ask
+     what this is. */
+  const about = full ? mxTplAbout(t, () => showAbout(false)) : null;
   const page = h('div', { class: 'mx-tpl' + (use ? ' is-use' : '') + (shell ? ' is-shell' : '')
-      + (inChat ? ' is-in-chat' : '') + (sideHidden() ? ' is-side-hidden' : '') },
+      + (inChat ? ' is-in-chat' : '') + (sideHidden() ? ' is-side-hidden' : '')
+      + (aboutHidden() ? ' is-about-hidden' : '') },
     h('div', { class: 'mx-tpl-side-wrap' }, side),
     h('div', { class: 'mx-tpl-main' },
       /* Docked beside its conversation nothing stands over the document
@@ -2107,9 +2186,12 @@ function templatePage(t, use = false, shell = false, frozen = false) {
           ? h('button', { class: 'btn btn--primary', type: 'button', onclick: draft }, 'Create Draft')
           : null),
       docScroll),
+    about ? h('div', { class: 'mx-tpl-about-wrap' }, about) : null,
     shell ? showSideBtn : null,
+    about ? showAboutBtn : null,
     resize);
   side.inert = sideHidden();
+  if (about) about.inert = aboutHidden();
   setSideW(inChat ? SIDE_W.base : (state.mxSideW || SIDE_W.base));
 
   /* `/` anywhere on the page (but not while typing) starts a search */

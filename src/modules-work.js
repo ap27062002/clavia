@@ -652,8 +652,10 @@ function submitRequest(text, files, step) {
 }
 
 /* ── the form: the four questions legal asks before anything else ── */
-function requestForm() {
-  const f = { title: '', how: 'template', templates: [], files: [], counterparty: '', address: '' };
+/* `pre` starts it with something already chosen — a template read from
+   its own page sends the reader straight here with it in hand */
+function requestForm(pre = {}) {
+  const f = { title: '', how: 'template', templates: [], files: [], counterparty: '', address: '', ...pre };
   const tpls = mxData().templates.filter(t => t.status === 'live');
   const dim = h('div', { class: 'pb-dim mx-rqf-dim', onclick: (e) => { if (e.target === dim) close(); } });
   const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } };
