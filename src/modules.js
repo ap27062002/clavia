@@ -886,18 +886,23 @@ function templateList() {
     cells: (x) => [[mxTile('tpl'), h('span', { class: 'pb-row-name' }, x.name || 'Untitled template')], x.kind, pbStatus(x.status), 'v' + mxTplVer(x),
       String(x.used), mxPerson(x.owner), pbWhen(x.updated)],
     open: (x) => mxOpen('templates', x.id),
-    menu: (x, row) => [
-      { label: 'Open', icon: 'files', run: () => mxOpen('templates', x.id) },
-      { label: 'Edit with Chat', icon: 'rename', run: () => mxTplEditInChat(x) },
-      { label: 'Open in Word', icon: 'download', run: () => mxTplToWord(x) },
-      { label: 'Duplicate', icon: 'copy', run: () => {
-        const c = structuredClone(x);
-        Object.assign(c, { id: pbUid('tpl'), name: (x.name || 'Untitled template') + ' copy', status: 'draft', used: 0, version: 1, owner: USER.name, updated: mxNow() });
-        d.templates.splice(d.templates.indexOf(x) + 1, 0, c); save(); MX.flash = c.id; t.paint();
-      } },
-      { rule: true },
-      { label: 'Delete', icon: 'trash', danger: true, run: () => mxRemove(d.templates, x, row, 'template', (back) => back && t.paint()) },
-    ],
+    /* the same things in the same order a playbook's row offers, because
+       they are the same things: see it, work on it, name it, hand it on,
+       copy it — and the one that destroys it last, after a rule. Open in
+       Word is the one a playbook has no use for. */
+    menu: (x, row) => {
+      GLYPHS.retitle ||= '<path d="M5.5 7V5.5h13V7"/><path d="M12 5.5v13"/><path d="M9.5 18.5h5"/>';
+      return [
+        { label: 'View', icon: 'look', run: () => mxOpen('templates', x.id) },
+        { label: 'Edit with Chat', icon: 'rename', run: () => mxTplEditInChat(x) },
+        { label: 'Rename', icon: 'retitle', run: () => mxTplRename(x, () => t.paint()) },
+        { label: 'Share', icon: 'share', run: () => mxTplShare(x) },
+        { label: 'Duplicate', icon: 'copy', run: () => mxTplDuplicate(x) },
+        { label: 'Open in Word', icon: 'download', run: () => mxTplToWord(x) },
+        { rule: true },
+        { label: 'Delete', icon: 'trash', danger: true, run: () => mxRemove(d.templates, x, row, 'template', (back) => back && t.paint()) },
+      ];
+    },
   });
   return mxListPage('Templates', mxCta('New Template', (btn, keyboard) => pbWaysMenu(btn, 'mx-tpl-new', [
     { key: 'ai', name: 'Build with AI', desc: 'Describe the document, and Clavia drafts it with its blanks named.',
@@ -1001,6 +1006,65 @@ function mxTplAskSet(t, text, files) {
           : { source: 'think', query: 'Read what the document is for' },
       ] },
   ];
+}
+
+/* ── the things a row can do ──────────────────────────────────
+   The same three a playbook's row does, behaving the same way
+   (renamePlaybook, sharePlaybook, duplicatePlaybook in playbooks.js).
+   Delete is mxRemove, which already does what deletePlaybook does. */
+
+/* Renaming from the list: a small dialog with the name selected, so
+   typing replaces it. Enter keeps it, Escape or a click outside leaves
+   it as it was, and the toast can put the old one back. */
+function mxTplRename(t, repaint) {
+  const dim = h('div', { class: 'pb-dim', onclick: (e) => { if (e.target === dim) close(); } });
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } };
+  const close = () => { removeEventListener('keydown', onKey, true); dim.classList.add('is-closing'); setTimeout(() => dim.remove(), 150); };
+  const input = h('input', { class: 'pb-rename-in', type: 'text', value: t.name || '', placeholder: 'Untitled template',
+    'aria-label': 'Template name', spellcheck: 'false',
+    oninput: () => { ok.disabled = !input.value.trim() || input.value.trim() === (t.name || ''); },
+    onkeydown: (e) => { if (e.key === 'Enter' && !ok.disabled) keep(); } });
+  const keep = () => {
+    const was = t.name;
+    t.name = input.value.trim(); t.updated = mxNow(); save();
+    close();
+    MX.flash = t.id; repaint?.();
+    pbToast(`Renamed to “${t.name}”`, { label: 'Undo', run: () => {
+      t.name = was; t.updated = mxNow(); save(); MX.flash = t.id; repaint?.();
+    } });
+  };
+  const ok = h('button', { class: 'pb-btn pb-btn--primary', type: 'button', disabled: true, onclick: keep }, 'Rename');
+  dim.append(h('div', { class: 'pb-dlg pb-confirm pb-rename', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Rename template' },
+    h('h2', { class: 'pb-dlg-t' }, 'Rename Template'),
+    input,
+    h('footer', { class: 'pb-confirm-foot' },
+      h('button', { class: 'pb-btn', type: 'button', onclick: close }, 'Cancel'), ok)));
+  document.body.append(dim);
+  addEventListener('keydown', onKey, true);
+  requestAnimationFrame(() => { input.focus(); input.select(); });
+}
+
+/* the share dialog the rest of the app uses, pointed at a template */
+function mxTplShare(t) {
+  t.share ||= { people: [{ name: t.owner, role: 'owner' }], general: 'me',
+    generalRole: 'view', published: false };
+  publishDialog({ id: 'template:' + t.id, name: t.name || 'Untitled template', kind: 'chat',
+    url: `clavia.app/templates/${t.id}`, publish: t.share }, save);
+}
+
+/* a copy sits under the one it came from and starts its own history: its
+   own blocks, its own count, a draft again, and yours */
+function mxTplDuplicate(t) {
+  const d = mxData();
+  const copy = structuredClone(t);
+  Object.assign(copy, { id: pbUid('tpl'), name: (t.name || 'Untitled template') + ' copy',
+    status: 'draft', used: 0, version: 1, owner: USER.name, updated: mxNow() });
+  delete copy.share;
+  copy.body.forEach(b => { b.id = pbUid('blk'); });
+  d.templates.splice(d.templates.indexOf(t) + 1, 0, copy);
+  save();
+  MX.flash = copy.id;
+  mxClose('templates'); go('templates');
 }
 
 /* ── Open in Word ─────────────────────────────────────────────
