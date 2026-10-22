@@ -23,7 +23,10 @@
 
 const MX = {
   vault:     { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, files: {} },
-  templates: { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, values: {} },
+  /* fold: sections folded on the sheet, outline: sections folded in the
+     outline beside it, sideHidden: the whole panel put away */
+  templates: { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, values: {},
+               fold: {}, outline: {}, sideHidden: false },
   requests:  { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } } },
   projects:  { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, items: {} },
   agents:    { open: null },   // 'new', 'build', 'build/done', or an agent's id
@@ -1006,6 +1009,40 @@ function templatePage(t, use = false) {
   const prog = h('span', { class: 'mx-fill-n' });
   const paintProg = () => { prog.textContent = !t.fields.length ? '' : use ? `${filled()} of ${t.fields.length} filled` : mxPlural(t.fields.length, 'field'); };
 
+  /* ── the document, read as sections ───────────────────────────
+     The body is a run of headings and paragraphs. A heading and the
+     paragraphs under it are a section — that is what folds, what the
+     outline lists, and what is carried to a new place. Anything written
+     before the first heading is the opening, which has no heading to
+     fold. Every block carries a name of its own so all three can speak
+     about one without counting to it. */
+  for (const b of t.body) b.id ||= pbUid('blk');
+  const blockOf = (id) => t.body.find(b => b.id === id) || null;
+  /* filling a document shows only what has been written; keeping the
+     template shows the empty ones too, so they can be written in */
+  const written = () => use ? t.body.filter(b => (b.h ?? b.p).trim()) : t.body;
+  const groups = () => {
+    const gs = [];
+    let cur = null;
+    for (const b of written()) {
+      if (b.h !== undefined) { cur = { head: b, blocks: [] }; gs.push(cur); }
+      else {
+        if (!cur) { cur = { head: null, blocks: [] }; gs.push(cur); }
+        cur.blocks.push(b);
+      }
+    }
+    return gs;
+  };
+  /* a blank reads as its field's name here, or as what was filled in */
+  const plain = (s) => (s || '').replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => (use && vals[k]?.trim()) || mxFieldLabel(t, k));
+  const secName = (g) => g.head ? (plain(g.head.h).trim() || 'Untitled section') : 'Opening';
+  const paraName = (b) => {
+    const s = plain(b.p).replace(/\s+/g, ' ').trim();
+    return !s ? 'Empty paragraph' : s.length > 64 ? s.slice(0, 62).trimEnd() + '…' : s;
+  };
+  const secId = (g) => g.head ? g.head.id : 'opening';
+  const groupOf = (id) => groups().find(g => secId(g) === id) || null;
+
   /* ── the document: every blank a chip that fills as its field is typed ── */
   const chip = (key) => h('span', { class: 'mx-chip', 'data-key': key, contenteditable: 'false', tabindex: '-1' });
   const paintChips = (only, flash) => {
@@ -1033,14 +1070,12 @@ function templatePage(t, use = false) {
     if (use) { const el = h(isH ? 'h2' : 'p', { class: isH ? 'mx-doc-h' : 'mx-doc-p' }); fill(el, isH ? b.h : b.p); return el; }
     const el = h(isH ? 'h2' : 'p', { class: isH ? 'mx-doc-h' : 'mx-doc-p', contenteditable: 'plaintext-only', spellcheck: 'false',
       'data-ph': isH ? 'Heading' : 'Write here',
-      oninput: () => { b[isH ? 'h' : 'p'] = read(el); t.updated = mxNow(); save(); },
+      oninput: () => { b[isH ? 'h' : 'p'] = read(el); t.updated = mxNow(); save(); if (isH) paintIdx(); else queueIdx(); },
       onkeydown: (e) => {
         if (e.key !== 'Enter') return;
         /* Enter starts the next paragraph rather than breaking this one */
         e.preventDefault();
-        const nb = { p: '' };
-        t.body.splice(t.body.indexOf(b) + 1, 0, nb); save();
-        const ne = block(nb); el.after(ne); ne.focus();
+        addParaAfter(b);
       },
       onblur: () => { const s = getSelection(); if (s.rangeCount && el.contains(s.anchorNode)) last = s.getRangeAt(0).cloneRange(); } });
     fill(el, isH ? b.h : b.p);
@@ -1052,33 +1087,493 @@ function templatePage(t, use = false) {
   /* a long name takes a second line rather than being cut off */
   const title = h('textarea', { class: 'mx-doc-title', rows: '1', placeholder: 'Untitled template', 'aria-label': 'Template name',
     oninput: (e) => { t.name = e.target.value.replace(/\n/g, ' '); t.updated = mxNow(); save(); },
-    onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); docBody.firstElementChild?.focus(); } } });
+    onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); docBody.querySelector('[contenteditable]')?.focus(); } } });
   title.value = t.name;
-  const docBody = h('div', { class: 'mx-doc-body' }, ...t.body.filter(b => !use || (b.h ?? b.p).trim()).map(block));
-  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') },
-    use ? h('h1', { class: 'mx-doc-title' }, t.name || 'Untitled template') : title, docBody);
-  /* a blank in the document and its field find each other */
-  sheet.addEventListener('click', (e) => {
-    const c = e.target.closest('.mx-chip');
-    if (c) fieldsEl.querySelector(`input[data-key="${c.dataset.key}"]`)?.focus();
-  });
-  const lit = (key, on) => {
-    for (const el of sheet.querySelectorAll('.mx-chip')) el.classList.toggle('is-lit', on && el.dataset.key === key);
+
+  /* ── a section on the sheet ───────────────────────────────────
+     Its heading, the chevron that folds it away at the right corner, and
+     — under the pointer, while the template is being kept — a delete and
+     an add-a-paragraph-here beside it. */
+  const docBody = h('div', { class: 'mx-doc-body' });
+  const paraEl = (b) => {
+    const el = block(b);
+    if (use) return h('div', { class: 'mx-blk', 'data-id': b.id }, el);
+    return h('div', { class: 'mx-blk', 'data-id': b.id },
+      h('span', { class: 'mx-blk-n' }), el,
+      h('button', { class: 'pbv-icon mx-blk-del', type: 'button', 'aria-label': 'Delete paragraph',
+        'data-tip': 'Delete Paragraph', html: PBV_TRASH, onclick: () => deletePara(b) }));
   };
+  const sectionEl = (g) => {
+    const open = !g.head || !secFolded.has(g.head.id);
+    const sec = h('section', { class: 'mx-sec' + (g.head ? '' : ' is-pre'), 'data-id': secId(g) });
+    const body = h('div', { class: 'mx-sec-body' }, ...g.blocks.map(paraEl));
+    if (!g.head) { sec.append(h('div', { class: 'mx-sec-wrap' }, body)); return sec; }
+    sec.append(
+      h('header', { class: 'mx-sec-head' },
+        h('span', { class: 'mx-sec-n' }), block(g.head),
+        h('button', { class: 'pbv-icon mx-sec-fold', type: 'button', html: PB_SVG.chev,
+          onclick: () => foldSection(sec, !sec.classList.contains('is-folded')) }),
+        !use && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-del', type: 'button', 'aria-label': 'Delete section',
+          'data-tip': 'Delete Section', html: PBV_TRASH, onclick: () => deleteSection(groupOf(sec.dataset.id)) }),
+        !use && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-add', type: 'button', 'aria-label': 'Add a paragraph to this section',
+          'data-tip': 'Add Paragraph', onclick: () => addParagraph(groupOf(sec.dataset.id)) }, icon('plus', 'ico ico-14'))),
+      h('div', { class: 'mx-sec-wrap' }, body));
+    foldSection(sec, !open, true);
+    return sec;
+  };
+  /* numbers are read off the page, so they are right after anything is
+     added, removed or moved. The opening has no number, and neither do
+     the paragraphs in it. */
+  const sheetNumbers = () => {
+    let si = 0;
+    for (const sec of docBody.querySelectorAll('.mx-sec')) {
+      const pre = sec.classList.contains('is-pre');
+      if (!pre) si++;
+      const n = sec.querySelector('.mx-sec-n');
+      if (n) n.textContent = `${si}.`;
+      sec.querySelectorAll('.mx-blk-n').forEach((el, ci) => { el.textContent = pre ? '' : `${si}.${ci + 1}`; });
+    }
+  };
+  const paintBody = (flashId) => {
+    const y = docScroll.scrollTop;
+    docBody.replaceChildren(...groups().map(sectionEl));
+    renumber();
+    syncFoldAll();
+    paintChips();
+    if (qIn.value.trim()) filter();
+    docScroll.scrollTop = y;
+    if (flashId) docBody.querySelector(`[data-id="${flashId}"]`)?.classList.add('is-new');
+  };
+  const renumber = () => { sheetNumbers(); paintIdx(); paintCount(); };
+
+  /* ── folding a section away ───────────────────────────────────
+     Kept while the template is open, on the sheet and in the outline
+     separately: what you have put away in one is not put away in the other. */
+  const secFolded = ((MX.templates.fold ||= {})[t.id] ||= new Set());
+  function foldSection(sec, on, quiet) {
+    if (sec.classList.contains('is-pre')) return;
+    const id = sec.dataset.id;
+    if (on) secFolded.add(id); else secFolded.delete(id);
+    sec.classList.toggle('is-folded', on);
+    sec.querySelector('.mx-sec-wrap').inert = on;
+    const btn = sec.querySelector('.mx-sec-fold');
+    btn.setAttribute('aria-expanded', String(!on));
+    btn.dataset.tip = on ? 'Expand Section' : 'Collapse Section';
+    btn.setAttribute('aria-label', btn.dataset.tip);
+    if (quiet) return;
+    /* clipped only while it moves, so nothing is cut off at rest */
+    sec.classList.add('is-folding');
+    setTimeout(() => sec.classList.remove('is-folding'), 300);
+    syncFoldAll();
+  }
+  const openSection = (id) => {
+    const sec = docBody.querySelector(`.mx-sec[data-id="${id}"]`);
+    if (sec?.classList.contains('is-folded')) foldSection(sec, false);
+  };
+  const sheetSecs = () => [...docBody.querySelectorAll('.mx-sec:not(.is-pre)')];
+  const allFolded = () => { const s = sheetSecs(); return s.length > 0 && s.every(x => x.classList.contains('is-folded')); };
+  function syncFoldAll() {
+    const all = allFolded();
+    foldAllBtn.innerHTML = all ? PBV_EXPAND_ALL : PBV_COLLAPSE_ALL;
+    foldAllBtn.dataset.tip = all ? 'Expand All Sections' : 'Collapse All Sections';
+    foldAllBtn.setAttribute('aria-label', foldAllBtn.dataset.tip);
+    foldAllBtn.setAttribute('aria-pressed', String(all));
+    foldAllBtn.disabled = !sheetSecs().length;
+  }
+  function foldAll(on) {
+    const at = docBody.querySelector(`.mx-sec[data-id="${curSec}"]`);
+    for (const sec of sheetSecs()) foldSection(sec, on, true);
+    syncFoldAll();
+    /* the sheet has just changed height under you: stay where you were */
+    setTimeout(() => at?.scrollIntoView({ block: on ? 'center' : 'start', behavior: 'smooth' }), 280);
+  }
+
+  /* ── adding and removing on the sheet ── */
+  function addParaAfter(b) {
+    const nb = { id: pbUid('blk'), p: '' };
+    t.body.splice(t.body.indexOf(b) + 1, 0, nb);
+    t.updated = mxNow(); save();
+    const wrap = paraEl(nb);
+    wrap.classList.add('is-new');
+    const host = docBody.querySelector(`[data-id="${b.id}"]`);
+    if (host?.classList.contains('mx-blk')) host.after(wrap);
+    else if (host) { openSection(host.dataset.id); host.querySelector('.mx-sec-body').prepend(wrap); }
+    else (docBody.lastElementChild?.querySelector('.mx-sec-body') || docBody).append(wrap);
+    renumber();
+    wrap.querySelector('[contenteditable]')?.focus();
+  }
+  /* a new paragraph joins the section you are in, after its last one */
+  function addParagraph(g) {
+    const after = g && (g.blocks.length ? g.blocks[g.blocks.length - 1] : g.head);
+    if (after) return addParaAfter(after);
+    const nb = { id: pbUid('blk'), p: '' };
+    t.body.push(nb); t.updated = mxNow(); save();
+    paintBody(nb.id);
+    focusBlock(nb.id);
+  }
+  function addSection() {
+    const head = { id: pbUid('blk'), h: 'New section' }, body = { id: pbUid('blk'), p: '' };
+    t.body.push(head, body); t.updated = mxNow(); save();
+    paintBody(head.id);
+    focusBlock(head.id, true);
+  }
+  const focusBlock = (id, select) => {
+    const host = docBody.querySelector(`[data-id="${id}"]`);
+    host?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => {
+      const el = host?.querySelector('[contenteditable]');
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      if (select) { const r = new Range(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+    }, 300);
+  };
+  /* a blank whose word is gone from the page goes back to being nothing
+     more than a field: the field itself is kept, so it can be used again */
+  function dropBlocks(gone, label) {
+    const before = t.body.slice();
+    t.body = t.body.filter(b => !gone.includes(b));
+    t.updated = mxNow(); save();
+    pbToast(`Deleted ${label}`, { label: 'Undo', run: () => {
+      t.body = before; t.updated = mxNow(); save(); paintBody(gone[0]?.id); paintProg();
+    } });
+  }
+  function deletePara(b) {
+    const el = docBody.querySelector(`.mx-blk[data-id="${b.id}"]`);
+    dropBlocks([b], `“${paraName(b)}”`);
+    if (el) pbLeave(el, renumber); else paintBody();
+  }
+  /* a section takes its paragraphs with it, so it asks first and names them */
+  function deleteSection(g) {
+    if (!g?.head) return;
+    const si = groups().filter(x => x.head).findIndex(x => x.head.id === g.head.id) + 1;
+    const n = g.blocks.length;
+    pbConfirm({
+      title: `Delete “${secName(g)}”?`,
+      lead: !n ? 'This section will be deleted.'
+        : n === 1 ? 'This section and the paragraph in it will be deleted.'
+        : `This section and the ${n} paragraphs in it will be deleted.`,
+      items: g.blocks.map((b, i) => ({ n: `${si}.${i + 1}`, t: paraName(b) })),
+      action: 'Delete section',
+      run: () => {
+        const sec = docBody.querySelector(`.mx-sec[data-id="${g.head.id}"]`);
+        secFolded.delete(g.head.id); outFolded.delete(g.head.id);
+        dropBlocks([g.head, ...g.blocks], `“${secName(g)}”${n ? ` and its ${n === 1 ? 'paragraph' : n + ' paragraphs'}` : ''}`);
+        if (sec) pbLeave(sec, renumber); else paintBody();
+      } });
+  }
+
+  /* ── the outline ──────────────────────────────────────────────
+     Every section at the margin with its number, its paragraphs one step
+     in under it — 1, then 1.1, 1.2. The chevron at the end of a row folds
+     it away; its name takes you there. */
+  const outFolded = ((MX.templates.outline ||= {})[t.id] ||= new Set());
+  let searching = false;      // a search shows every section that has a match
+  let held = false;           // a place chosen in the outline holds until you scroll
+  let drag = null, renaming = false;
+  let wasOpen = null;
+  const outOpen = (id) => searching || !outFolded.has(id);
+  const idxList = h('div', { class: 'pbv-idx-list mx-idx-list' });
+  let idxRaf = 0;
+  const queueIdx = () => { if (!idxRaf) idxRaf = requestAnimationFrame(() => { idxRaf = 0; paintIdx(); }); };
+  function paintIdx() {
+    if (drag || renaming) return;
+    const nowOpen = new Set();
+    let si = 0;
+    idxList.replaceChildren(...groups().map((g) => {
+      const id = secId(g), pre = !g.head;
+      if (!pre) si++;
+      const open = pre || outOpen(id);
+      if (open) nowOpen.add(id);
+      const head = h('div', { class: 'pbv-idx-sec' + (pre ? ' is-pre' : ''), 'data-sec': id, 'data-open': String(open) },
+        !use && !pre && h('span', { class: 'pbv-idx-grip', 'aria-hidden': 'true', 'data-tip': 'Drag to Reorder', html: PBV_GRIP }),
+        h('span', { class: 'pbv-idx-no pbv-idx-sec-no' }, pre ? '' : `${si}.`),
+        h('button', { class: 'pbv-idx-sec-t', type: 'button',
+          onclick: () => goSec(id),
+          ondblclick: !use && !pre ? () => renameSec(id) : null },
+          h('span', { class: 'pbv-idx-sec-name' }, secName(g))),
+        !use && !pre && h('button', { class: 'pbv-idx-ren', type: 'button', 'aria-label': 'Rename ' + secName(g),
+          'data-tip': 'Rename Section', html: PBV_PENCIL, onclick: (e) => { e.stopPropagation(); renameSec(id); } }),
+        !pre && h('button', { class: 'pbv-idx-fold', type: 'button', 'aria-expanded': String(open),
+          'aria-label': (open ? 'Collapse ' : 'Expand ') + secName(g), html: PB_SVG.chev,
+          'data-tip': open ? 'Collapse Section' : 'Expand Section',
+          onclick: (e) => { e.stopPropagation(); toggleSec(id); } }));
+      const items = h('div', { class: 'pbv-idx-items' + (open && wasOpen && !wasOpen.has(id) ? ' is-opening' : ''), hidden: !open },
+        ...g.blocks.map((b, ci) => h('button', { class: 'pbv-idx-it', type: 'button', 'data-id': b.id,
+          onclick: () => jump(b.id) },
+          !use && h('span', { class: 'pbv-idx-grip', 'aria-hidden': 'true', 'data-tip': 'Drag to Reorder', html: PBV_GRIP }),
+          h('span', { class: 'pbv-idx-no' }, pre ? `${ci + 1}` : `${si}.${ci + 1}`),
+          h('span', { class: 'pbv-idx-t' }, paraName(b)))));
+      return h('div', { class: 'pbv-idx-group', 'data-pre': pre ? 'y' : null }, head, items);
+    }));
+    wasOpen = nowOpen;
+    markCurrent();
+    syncIdxFold();
+    if (hl.q) queueHits();
+  }
+  /* one control folds the outline to its section names, and opens it again */
+  const idxAllFolded = () => {
+    const g = groups().filter(x => x.head);
+    return g.length > 0 && g.every(x => outFolded.has(x.head.id));
+  };
+  const idxFoldBtn = h('button', { class: 'pbv-icon', type: 'button', onclick: () => {
+    const all = idxAllFolded();
+    outFolded.clear();
+    if (!all) for (const g of groups()) if (g.head) outFolded.add(g.head.id);
+    wasOpen = all ? new Set() : wasOpen;      // opening them all: each one arrives
+    paintIdx();
+  } });
+  function syncIdxFold() {
+    const all = idxAllFolded();
+    idxFoldBtn.innerHTML = all ? PBV_EXPAND_ALL : PBV_COLLAPSE_ALL;
+    idxFoldBtn.dataset.tip = all ? 'Show All Paragraphs' : 'Show Sections Only';
+    idxFoldBtn.setAttribute('aria-label', idxFoldBtn.dataset.tip);
+    idxFoldBtn.setAttribute('aria-pressed', String(all));
+  }
+  function toggleSec(id) {
+    if (!outFolded.delete(id)) outFolded.add(id);
+    paintIdx();
+  }
+  function goSec(id) {
+    outFolded.delete(id); curSec = id; held = true;
+    paintIdx();
+    openSection(id);
+    scrollTo_(docBody.querySelector(`.mx-sec[data-id="${id}"]`));
+  }
+  function jump(id) {
+    const el = docBody.querySelector(`.mx-blk[data-id="${id}"]`);
+    if (!el) return;
+    openSection(el.closest('.mx-sec')?.dataset.id);
+    curId = id; held = true; markCurrent();
+    scrollTo_(el);
+    el.classList.remove('is-at'); void el.offsetWidth; el.classList.add('is-at');
+  }
+  const scrollTo_ = (el) => {
+    if (!el) return;
+    const top = el.getBoundingClientRect().top - docScroll.getBoundingClientRect().top + docScroll.scrollTop - 72;
+    docScroll.scrollTo({ top, behavior: 'smooth' });
+  };
+  /* Renaming a section where you see it listed: the name becomes a field.
+     Enter or clicking away keeps it, Escape puts the old one back. */
+  function renameSec(id) {
+    const b = blockOf(id);
+    const head = [...idxList.querySelectorAll('.pbv-idx-sec')].find(x => x.dataset.sec === id);
+    const btn = head?.querySelector('.pbv-idx-sec-t');
+    if (!b || !btn) return;
+    const was = b.h;
+    const input = h('input', { class: 'pbv-idx-sec-in', value: plain(was), 'aria-label': 'Section name' });
+    let done = false;
+    const finish = (keep) => {
+      if (done) return;
+      done = true; renaming = false;
+      const next = input.value.trim();
+      if (keep && next && next !== plain(was)) {
+        b.h = next; t.updated = mxNow(); save();
+        const el = docBody.querySelector(`.mx-sec[data-id="${id}"] .mx-doc-h`);
+        if (el) { fill(el, next); paintChips(); }
+      }
+      head.classList.remove('is-renaming');
+      paintIdx();
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();            // Escape here is for the field, not the page
+      if (e.key === 'Enter') finish(true);
+      if (e.key === 'Escape') finish(false);
+    });
+    input.addEventListener('blur', () => finish(true));
+    head.classList.add('is-renaming');
+    btn.replaceWith(input);
+    renaming = true;
+    input.focus(); input.select();
+  }
+
+  /* ── carrying a section or a paragraph to a new place ─────────
+     Pointer-driven rather than the browser's own drag, so the row can
+     follow the hand and the list can open a slot for it as it goes. What
+     the outline shows when it is put down is the new order of the body. */
+  const idxNumbers = () => {
+    let si = 0;
+    idxList.querySelectorAll('.pbv-idx-group').forEach((g) => {
+      const pre = g.dataset.pre;
+      if (!pre) si++;
+      g.querySelector('.pbv-idx-sec-no').textContent = pre ? '' : `${si}.`;
+      g.querySelectorAll('.pbv-idx-it .pbv-idx-no').forEach((n, ci) => { n.textContent = pre ? `${ci + 1}` : `${si}.${ci + 1}`; });
+    });
+  };
+  /* move the slot, and let everything it displaces slide rather than jump */
+  const moveSlot = (place) => {
+    const moved = [...idxList.querySelectorAll('.pbv-idx-it, .pbv-idx-sec')];
+    const before = new Map(moved.map(el => [el, el.getBoundingClientRect().top]));
+    place();
+    for (const el of moved) {
+      if (el === drag.it || drag.it.contains(el)) continue;
+      const dy = before.get(el) - el.getBoundingClientRect().top;
+      if (!dy) continue;
+      el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }],
+        { duration: 180, easing: 'cubic-bezier(.2,0,0,1)' });
+    }
+    idxNumbers();
+  };
+  const dragStep = (e) => {
+    const { it, ghost } = drag;
+    ghost.style.left = (e.clientX - drag.dx) + 'px';
+    ghost.style.top = (e.clientY - drag.dy) + 'px';
+    drag.y = e.clientY;
+    /* a whole section: it goes before the first heading the pointer is above,
+       and never above the opening, which has no heading of its own */
+    if (drag.sec) {
+      const next = [...idxList.children].filter(g => g !== it && !g.dataset.pre).find(g => {
+        const r = g.querySelector('.pbv-idx-sec').getBoundingClientRect();
+        return e.clientY < r.top + r.height / 2;
+      }) || null;
+      if (it.nextElementSibling !== next) moveSlot(() => idxList.insertBefore(it, next));
+      return;
+    }
+    /* what the pointer is over decides where the slot goes */
+    const stops = [...idxList.querySelectorAll('.pbv-idx-it:not(.is-slot), .pbv-idx-sec')]
+      .filter(el => el.offsetParent !== null);
+    const next = stops.find(el => { const r = el.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; });
+    let box, ref = null;
+    if (next?.classList.contains('pbv-idx-it')) { box = next.parentElement; ref = next; }
+    else {
+      /* above a section's heading means the end of the section before it;
+         past the last row means the end of the last section */
+      const group = next ? next.parentElement.previousElementSibling : idxList.lastElementChild;
+      box = (group || next.parentElement).querySelector('.pbv-idx-items');
+      if (!group) ref = box.firstElementChild === it ? it.nextElementSibling : box.firstElementChild;
+    }
+    for (const s of idxList.querySelectorAll('.pbv-idx-sec.is-drop')) s.classList.remove('is-drop');
+    /* a closed section cannot show the slot, so its heading lights instead —
+       and, held there a moment, it springs open to take the paragraph */
+    if (box.hidden) {
+      const head = box.previousElementSibling;
+      head.classList.add('is-drop');
+      if (drag.spring?.box !== box) {
+        clearTimeout(drag.spring?.t);
+        drag.spring = { box, t: setTimeout(() => {
+          if (!drag) return;
+          box.hidden = false; box.classList.add('is-opening');
+          head.dataset.open = 'true'; head.classList.remove('is-drop');
+        }, 450) };
+      }
+    } else { clearTimeout(drag.spring?.t); drag.spring = null; }
+    if (it.parentElement === box && it.nextElementSibling === ref) return;
+    if (ref === it) return;
+    moveSlot(() => box.insertBefore(it, ref));
+  };
+  const dragScroll = () => {
+    if (!drag) return;
+    const r = side.getBoundingClientRect();
+    if (drag.y < r.top + 44) side.scrollTop -= 7;
+    else if (drag.y > r.bottom - 44) side.scrollTop += 7;
+    drag.raf = requestAnimationFrame(dragScroll);
+  };
+  /* the order the outline is left in is the order the body takes */
+  const idxOrder = () => {
+    const next = [];
+    for (const g of idxList.querySelectorAll('.pbv-idx-group')) {
+      const head = blockOf(g.querySelector('.pbv-idx-sec')?.dataset.sec);
+      if (head) next.push(head);
+      for (const row of g.querySelectorAll('.pbv-idx-it')) { const b = blockOf(row.dataset.id); if (b) next.push(b); }
+    }
+    return next;
+  };
+  const dragEnd = (cancel) => {
+    const { it, ghost, order } = drag, isSec = drag.sec;
+    cancelAnimationFrame(drag.raf);
+    clearTimeout(drag.spring?.t);
+    page.classList.remove('is-dragging');
+    for (const s of idxList.querySelectorAll('.pbv-idx-sec.is-drop')) s.classList.remove('is-drop');
+    const next = cancel ? [] : idxOrder();
+    const changed = !cancel && next.length === t.body.length && next.map(b => b.id).join() !== order;
+    /* the carried row settles into its slot, or into the folded heading */
+    const at = isSec ? it.querySelector('.pbv-idx-sec') : (it.offsetParent ? it : it.parentElement.previousElementSibling);
+    const home = at.getBoundingClientRect();
+    ghost.classList.add('is-landing');
+    ghost.style.left = home.left + 'px'; ghost.style.top = home.top + 'px';
+    if (!isSec && !it.offsetParent) ghost.style.opacity = '0';
+    const id = isSec ? it.querySelector('.pbv-idx-sec').dataset.sec : it.dataset.id;
+    setTimeout(() => {
+      ghost.remove();
+      idxList.classList.remove('is-sec-drag');
+      drag = null;
+      if (changed) {
+        t.body = next; t.updated = mxNow(); save();
+        paintBody(id);
+        requestAnimationFrame(() => isSec ? goSec(id) : jump(id));
+      } else paintIdx();
+      spy();
+    }, 200);
+  };
+  idxList.addEventListener('pointerdown', (e) => {
+    if (use || e.button !== 0 || drag || renaming) return;
+    const row = e.target.closest('.pbv-idx-it');
+    const secHead = !row && !e.target.closest('.pbv-idx-ren, .pbv-idx-fold, input') && e.target.closest('.pbv-idx-sec:not(.is-pre)');
+    if (!row && !secHead) return;
+    /* a section is carried as its whole group; a paragraph as its row */
+    const it = row || secHead.parentElement;
+    const handle = row || secHead;
+    const x0 = e.clientX, y0 = e.clientY;
+    const move = (ev) => {
+      if (!drag) {
+        /* a click stays a click until the hand has actually moved */
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
+        const r = handle.getBoundingClientRect();
+        const ghost = handle.cloneNode(true);
+        ghost.classList.add('pbv-drag-ghost');
+        ghost.style.width = r.width + 'px'; ghost.style.left = r.left + 'px'; ghost.style.top = r.top + 'px';
+        document.body.append(ghost);
+        drag = { it, ghost, sec: !row, dx: x0 - r.left, dy: y0 - r.top, y: ev.clientY,
+          order: t.body.map(b => b.id).join() };
+        it.classList.add('is-slot');
+        /* carrying a section, every section folds to its heading: the list
+           becomes just the things being put in order */
+        if (!row) idxList.classList.add('is-sec-drag');
+        page.classList.add('is-dragging');
+        drag.raf = requestAnimationFrame(dragScroll);
+      }
+      ev.preventDefault();
+      dragStep(ev);
+    };
+    const stop = (cancel) => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', abort);
+      removeEventListener('keydown', key, true);
+      if (drag) {
+        /* the release would otherwise read as a click, and jump */
+        const eat = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+        idxList.addEventListener('click', eat, { capture: true });
+        setTimeout(() => idxList.removeEventListener('click', eat, { capture: true }), 0);
+        dragEnd(cancel);
+      }
+    };
+    const up = () => stop(false);
+    const abort = () => stop(true);
+    const key = (ev) => { if (ev.key === 'Escape' && drag) { ev.stopPropagation(); ev.preventDefault(); stop(true); } };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', abort);
+    addEventListener('keydown', key, true);
+  });
 
   /* ── the fields ── */
   const focusChip = (key) => {
     lit(key, true);
     const first = sheet.querySelector(`.mx-chip[data-key="${key}"]`);
-    if (first) { const r = first.getBoundingClientRect(), box = docScroll.getBoundingClientRect();
-      if (r.top < box.top + 40 || r.bottom > box.bottom - 40) first.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    if (!first) return;
+    openSection(first.closest('.mx-sec')?.dataset.id);
+    const r = first.getBoundingClientRect(), box = docScroll.getBoundingClientRect();
+    if (r.top < box.top + 40 || r.bottom > box.bottom - 40) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  const lit = (key, on) => {
+    for (const el of sheet.querySelectorAll('.mx-chip')) el.classList.toggle('is-lit', on && el.dataset.key === key);
   };
   const fieldRow = (f) => {
     if (use) {
       /* filling: the field's name, and its value */
       const input = h('input', { class: 'mx-f-in', 'data-key': f.key, value: vals[f.key] || '', placeholder: f.hint ? 'e.g. ' + f.hint : '',
         'aria-label': f.label,
-        oninput: (e) => { vals[f.key] = e.target.value; paintChips(f.key, true); paintProg(); },
+        oninput: (e) => { vals[f.key] = e.target.value; paintChips(f.key, true); paintProg(); queueIdx(); },
         onfocus: () => focusChip(f.key), onblur: () => lit(f.key, false) });
       return h('label', { class: 'mx-f' }, h('div', { class: 'mx-f-top' }, h('span', { class: 'mx-f-l' }, f.label || 'Untitled field')), input);
     }
@@ -1088,7 +1583,7 @@ function templatePage(t, use = false) {
       oninput: (e) => { f.hint = e.target.value; t.updated = mxNow(); save(); },
       onfocus: () => focusChip(f.key), onblur: () => lit(f.key, false) });
     const name = h('input', { class: 'mx-f-l', value: f.label, 'aria-label': 'Field name', placeholder: 'Field name',
-      oninput: (e) => { f.label = e.target.value; save(); paintChips(f.key); },
+      oninput: (e) => { f.label = e.target.value; save(); paintChips(f.key); queueIdx(); },
       onfocus: () => focusChip(f.key), onblur: () => lit(f.key, false) });
     return h('div', { class: 'mx-f is-keep' },
       h('div', { class: 'mx-f-top' }, name,
@@ -1099,7 +1594,7 @@ function templatePage(t, use = false) {
             for (const el of [...sheet.querySelectorAll(`.mx-chip[data-key="${f.key}"]`)]) {
               const host = el.closest('[contenteditable]'); el.replaceWith(f.label); host.__b[host.tagName === 'H2' ? 'h' : 'p'] = read(host);
             }
-            save(); paintFields(); paintProg();
+            save(); paintFields(); paintProg(); paintIdx();
           } })),
       h('label', { class: 'mx-f-eg' }, h('span', {}, 'e.g.'), hint));
   };
@@ -1114,9 +1609,15 @@ function templatePage(t, use = false) {
     const c = chip(key);
     const host = last && sheet.contains(last.startContainer) ? last.startContainer.parentElement.closest('[contenteditable]') || last.startContainer : null;
     if (host && last) { last.collapse(false); last.insertNode(c); }
-    else { const p = docBody.querySelector('.mx-doc-p:last-of-type') || docBody.lastElementChild; p.append(' ', c); }
-    const el = c.closest('[contenteditable]'); el.__b[el.tagName === 'H2' ? 'h' : 'p'] = read(el);
-    save(); paintFields(); paintChips(); paintProg();
+    else {
+      /* nowhere in particular: the end of the last paragraph, and if there
+         is not one yet, a paragraph made for it */
+      if (!docBody.querySelector('.mx-doc-p')) addParagraph(groups()[groups().length - 1]);
+      [...docBody.querySelectorAll('.mx-doc-p')].pop()?.append(' ', c);
+    }
+    const el = c.closest('[contenteditable]');
+    if (el) el.__b[el.tagName === 'H2' ? 'h' : 'p'] = read(el);
+    save(); paintFields(); paintChips(); paintProg(); paintIdx();
     const name = fieldsEl.querySelector('.mx-f:last-child .mx-f-l'); name.focus(); name.select();
   };
 
@@ -1130,7 +1631,7 @@ function templatePage(t, use = false) {
         vals[fd.key] = val;
         const input = fieldsEl.querySelector(`input.mx-f-in[data-key="${fd.key}"]`);
         if (input) { input.value = val; input.classList.remove('is-hit'); void input.offsetWidth; input.classList.add('is-hit'); }
-        paintChips(fd.key, true); paintProg();
+        paintChips(fd.key, true); paintProg(); queueIdx();
       }, 260 + (n++) * 240);
     }
     return n;
@@ -1180,6 +1681,193 @@ function templatePage(t, use = false) {
     const box = h('div', { class: 'mx-fa' }, ta, h('div', { class: 'mx-fa-row' }, clip, h('span', { class: 'pb-grow' }), send));
     return box;
   }
+
+  /* ── searching the document ───────────────────────────────────
+     No box: the glass, your words after it, and how many matches there
+     are. `/` opens it from anywhere on the sheet, Enter walks the
+     matches, Shift+Enter walks back. Folded sections open while a search
+     is on, so what it found can be read. */
+  const hl = { q: '', marks: [], cur: -1, raf: 0, shown: 0 };
+  /* closing it also puts the glass back where it was: focusing the field
+     scrolls this box, and the scroll outlives the field */
+  const closeFind = () => { qIn.value = ''; filter(); find.classList.remove('is-open'); qIn.blur(); find.scrollLeft = 0; };
+  const qIn = h('input', { type: 'search', placeholder: 'Search the document', 'aria-label': 'Search the document',
+    oninput: () => filter(),
+    onkeydown: (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); closeFind(); }
+      if (e.key === 'Enter') { e.preventDefault(); stepHit(e.shiftKey ? -1 : 1); }
+    },
+    onblur: () => { if (!qIn.value) { find.classList.remove('is-open'); find.scrollLeft = 0; } } });
+  const findCt = h('span', { class: 'pbv-find-ct', 'aria-live': 'polite' });
+  const find = h('div', { class: 'pb-find pbv-find mx-find' },
+    h('button', { class: 'pb-find-btn', type: 'button', 'aria-label': 'Search the document', 'data-tip': 'Search the Document  ( / )',
+      html: PB_SVG.search, onclick: () => { find.classList.add('is-open'); qIn.focus(); } }),
+    qIn, findCt,
+    h('button', { class: 'pbv-find-x', type: 'button', 'aria-label': 'Clear search', 'data-tip': 'Clear Search', html: PBV_X,
+      onmousedown: (e) => e.preventDefault(),        // the field keeps its focus
+      onclick: () => { qIn.value = ''; filter(); qIn.focus(); } }));
+  const nomatch = h('p', { class: 'mx-doc-none', hidden: true }, 'Nothing in this document matches that search.');
+  function filter() {
+    const q = qIn.value.trim().toLowerCase();
+    if (searching !== !!q) { searching = !!q; paintIdx(); }
+    let shown = 0;
+    for (const sec of docBody.querySelectorAll('.mx-sec')) {
+      /* a section whose name has the words keeps everything under it */
+      const head = blockOf(sec.dataset.id);
+      const secHit = !!q && !!head && plain(head.h).toLowerCase().includes(q);
+      let inSec = 0;
+      for (const el of sec.querySelectorAll('.mx-blk')) {
+        const b = blockOf(el.dataset.id);
+        const hit = !q || secHit || (b && plain(b.p).toLowerCase().includes(q));
+        el.hidden = !hit; inSec += hit ? 1 : 0;
+        idxList.querySelector(`.pbv-idx-it[data-id="${el.dataset.id}"]`)?.toggleAttribute('hidden', !hit);
+      }
+      const keep = !q || inSec > 0 || secHit;
+      sec.hidden = !keep;
+      shown += inSec;
+      /* folded things are opened by the search, and closed again after */
+      sec.querySelector('.mx-sec-wrap').inert = !q && sec.classList.contains('is-folded');
+      [...idxList.querySelectorAll('.pbv-idx-sec')].find(s => s.dataset.sec === sec.dataset.id)
+        ?.parentElement.toggleAttribute('hidden', !keep);
+    }
+    nomatch.hidden = !q || shown > 0;
+    find.classList.toggle('has-q', !!q);
+    docBody.classList.toggle('is-searching', !!q);
+    if (hl.q !== q) { hl.q = q; hl.cur = -1; }
+    hl.shown = shown;
+    paintHits();
+  }
+  /* the words are in the document itself, so the browser's own highlight
+     tints them where they stand; the one you are on is tinted apart */
+  const ranges = (root, q) => {
+    const out = [];
+    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (!n.parentElement?.offsetParent) continue;
+      const low = n.data.toLowerCase();
+      let i = 0, at;
+      while ((at = low.indexOf(q, i)) >= 0) {
+        const r = new Range(); r.setStart(n, at); r.setEnd(n, at + q.length);
+        out.push(r); i = at + q.length;
+      }
+    }
+    return out;
+  };
+  function paintHits() {
+    cancelAnimationFrame(hl.raf); hl.raf = 0;
+    CSS.highlights?.delete('mx-find'); CSS.highlights?.delete('mx-find-cur');
+    hl.marks = [];
+    const q = hl.q;
+    if (q && window.Highlight && CSS.highlights) {
+      hl.marks = ranges(docBody, q);
+      const all = hl.marks.concat(ranges(idxList, q));
+      if (all.length) CSS.highlights.set('mx-find', new Highlight(...all));
+      if (hl.cur >= hl.marks.length) hl.cur = -1;
+      if (hl.cur >= 0) CSS.highlights.set('mx-find-cur', new Highlight(hl.marks[hl.cur]));
+    }
+    const n = hl.marks.length;
+    findCt.textContent = !q ? '' : !hl.shown && !n ? 'No matches'
+      : hl.cur >= 0 ? `${hl.cur + 1} of ${n}`
+      : n ? `${n} ${n === 1 ? 'match' : 'matches'}` : `${hl.shown} shown`;
+  }
+  function queueHits() { if (!hl.raf) hl.raf = requestAnimationFrame(paintHits); }
+  function stepHit(d) {
+    if (!hl.marks.length) return;
+    hl.cur = (hl.cur + d + hl.marks.length + (hl.cur < 0 && d < 0 ? 1 : 0)) % hl.marks.length;
+    const el = hl.marks[hl.cur].startContainer.parentElement?.closest('.mx-blk, .mx-sec-head');
+    scrollTo_(el);
+    paintHits();
+  }
+
+  /* ── the bar over the sheet ───────────────────────────────────
+     What the document is and how much of it there is, the search, one
+     control that folds every section away and opens them all again, and
+     the plus that adds a paragraph or a section. */
+  const count = h('span', { class: 'pbv-count' }), countOut = h('span', { class: 'mx-fill-n' });
+  const paintCount = () => {
+    const n = groups().filter(g => g.head).length;
+    count.textContent = n;
+    countOut.textContent = mxPlural(n, 'section');
+  };
+  const foldAllBtn = h('button', { class: 'pbv-add mx-fold-all', type: 'button', onclick: () => foldAll(!allFolded()) });
+  const ctxN = h('span', { class: 'pbv-bar-ctx-n' }), ctxT = h('span', { class: 'pbv-bar-ctx-t' });
+  const ctx = h('button', { class: 'pbv-bar-ctx', type: 'button', tabindex: '-1', 'aria-hidden': 'true',
+    'data-tip': 'Go to Section Start',
+    onclick: () => scrollTo_(docBody.querySelector(`.mx-sec[data-id="${ctx.dataset.sec}"]`)) }, ctxN, ctxT);
+  const showSideBtn = h('button', { class: 'pbv-icon pbv-panel-btn mx-show-side', type: 'button', 'aria-label': 'Show the outline',
+    'data-tip': 'Show Outline', html: PBV_PANEL, onclick: () => showSide(true) });
+  const docBar = h('div', { class: 'mx-doc-bar' },
+    h('span', { class: 'pbv-bar-t' }, 'Sections'), count,
+    h('div', { class: 'pbv-bar-sub' }, ctx),
+    h('span', { class: 'pb-grow' }),
+    find,
+    foldAllBtn,
+    !use && h('button', { class: 'pbv-add', type: 'button', 'aria-label': 'Add', 'data-tip': 'Add Paragraph or Section',
+      'aria-haspopup': 'menu', 'aria-expanded': 'false',
+      onclick: (e) => { e.stopPropagation(); pbWaysMenu(e.currentTarget, 'mx-add', [
+        { key: 'para', name: 'Add New Paragraph', icon: () => h('span', { html: PBV_ADD_CLAUSE }) },
+        { key: 'section', name: 'Add New Section', icon: () => h('span', { html: PBV_ADD_SECTION }) },
+      ], (k) => k === 'para' ? addParagraph(groups().find(g => secId(g) === curSec) || groups()[groups().length - 1]) : addSection(),
+        { keyboard: e.detail === 0, small: true }); } },
+      icon('plus', 'ico ico-14')));
+
+  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') }, docBar,
+    h('div', { class: 'mx-doc-in' },
+      use ? h('h1', { class: 'mx-doc-title' }, t.name || 'Untitled template') : title, docBody, nomatch));
+  /* a blank in the document and its field find each other */
+  sheet.addEventListener('click', (e) => {
+    const c = e.target.closest('.mx-chip');
+    if (c) fieldsEl.querySelector(`input[data-key="${c.dataset.key}"]`)?.focus();
+  });
+  const docScroll = h('div', { class: 'mx-tpl-doc' }, sheet);
+
+  /* ── the outline follows the reading ── */
+  let curId = null, curSec = null;
+  function markCurrent() {
+    for (const b of idxList.querySelectorAll('.pbv-idx-it')) b.setAttribute('aria-current', String(b.dataset.id === curId));
+    for (const x of idxList.querySelectorAll('.pbv-idx-sec')) x.setAttribute('aria-current', String(x.dataset.sec === curSec));
+  }
+  /* which section's heading is out of sight above, while its paragraphs
+     are still on the sheet: its number and name come down in a slim
+     second bar of their own, so you still know where you are */
+  const context = () => {
+    const edge = docBar.getBoundingClientRect().bottom + 30;
+    let at = null;
+    for (const sec of docBody.querySelectorAll('.mx-sec:not(.is-pre)')) {
+      if (sec.hidden) continue;
+      const head = sec.querySelector('.mx-sec-head');
+      if (head.getBoundingClientRect().bottom > edge) break;
+      at = sec.getBoundingClientRect().bottom > edge + 8 ? sec : null;
+    }
+    const id = at?.dataset.id || '';
+    if (id && id !== ctx.dataset.sec) {
+      const swap = ctx.classList.contains('is-on');
+      ctx.dataset.sec = id;
+      ctxN.textContent = at.querySelector('.mx-sec-n')?.textContent || '';
+      ctxT.textContent = at.querySelector('.mx-doc-h')?.textContent.trim() || 'Untitled section';
+      if (swap) { ctx.classList.remove('is-swap'); void ctx.offsetWidth; ctx.classList.add('is-swap'); }
+    }
+    ctx.classList.toggle('is-on', !!id);
+    docBar.classList.toggle('is-stuck', docScroll.scrollTop > 16);
+    ctx.tabIndex = id ? 0 : -1;
+    ctx.setAttribute('aria-hidden', String(!id));
+  };
+  const spy = () => {
+    context();
+    const top = docScroll.getBoundingClientRect().top + 120;
+    let cur = null;
+    for (const el of docBody.querySelectorAll('.mx-blk')) {
+      if (el.hidden || !el.offsetParent) continue;
+      if (!cur || el.getBoundingClientRect().top <= top) cur = el;
+    }
+    if (held) return markCurrent();
+    curId = cur?.dataset.id || null;
+    curSec = cur?.closest('.mx-sec')?.dataset.id || null;
+    markCurrent();
+  };
+  docScroll.addEventListener('scroll', spy, { passive: true });
+  const release = () => { if (held) { held = false; spy(); } };
+  for (const ev of ['wheel', 'touchmove', 'pointerdown']) docScroll.addEventListener(ev, release, { passive: true });
 
   /* ── the draft: the template with what you filled in, as a document in a chat ── */
   const draft = () => {
@@ -1237,14 +1925,16 @@ function templatePage(t, use = false) {
       + `<title>${esc(t.name || 'Untitled template')}</title><style>body{font-family:Georgia,serif;font-size:12pt;line-height:1.5}`
       + `h1{font-size:20pt;font-weight:normal;margin:0 0 18pt}h2{font-size:12pt;margin:18pt 0 6pt}p{margin:0 0 10pt}</style></head>`
       + `<body><h1>${esc(t.name || 'Untitled template')}</h1>${body}</body></html>`;
-    const a = h('a', { href: URL.createObjectURL(new Blob(['\ufeff' + html], { type: 'application/msword' })),
+    const a = h('a', { href: URL.createObjectURL(new Blob(['﻿' + html], { type: 'application/msword' })),
       download: `${(t.name || 'Untitled template').replace(/[\\/:*?"<>|]+/g, ' ').trim()}.doc` });
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     pbToast(`“${t.name || 'Untitled template'}” is downloading for Word`);
   };
 
-  const docScroll = h('div', { class: 'mx-tpl-doc' }, sheet);
+  /* ── the panel beside the document ────────────────────────────
+     The outline and the fields. It closes to nothing, and keeps its own
+     width inside, so it slides out whole instead of being squeezed. */
   /* a draft started from a request goes back to that request */
   const from = use && MX.templates.from?.tpl === t.id ? MX.templates.from : null;
   const back = use
@@ -1252,18 +1942,74 @@ function templatePage(t, use = false) {
         h('span', { class: 'mx-back-ar', html: PB_SVG.chev }), from ? from.id : t.name || 'Untitled template')
     : h('button', { class: 'mx-back', type: 'button', onclick: () => { mxClose('templates'); go('templates'); } },
         h('span', { class: 'mx-back-ar', html: PB_SVG.chev }), 'Templates');
-  const word = h('button', { class: 'btn mx-word', type: 'button', onclick: toWord },
-    h('img', { src: 'assets/brand/word.svg', alt: '', 'aria-hidden': 'true' }), 'Open in Word');
-  const page = h('div', { class: 'mx-tpl' + (use ? ' is-use' : '') },
-    h('aside', { class: 'mx-tpl-side' }, back,
-      use ? fillAsk() : null,
-      h('div', { class: 'mx-tpl-side-head' },
-        h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, use ? 'Fill in' : 'Fields'), prog)),
-      fieldsEl,
-      use ? null : h('div', { class: 'mx-tpl-links' },
-        h('button', { class: 'pbv-add-fb', type: 'button', onclick: addField }, 'Add Field'))),
+  const hideBtn = h('button', { class: 'pbv-icon', type: 'button', 'aria-label': 'Hide the outline',
+    'data-tip': 'Hide Outline', html: PBV_PANEL, onclick: () => showSide(false) });
+  const outlineBlock = h('div', { class: 'mx-tpl-out' },
+    h('div', { class: 'mx-tpl-side-head' },
+      h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, 'Outline'), countOut),
+      h('span', { class: 'pb-grow' }), idxFoldBtn, hideBtn),
+    idxList);
+  const fieldsBlock = h('div', { class: 'mx-tpl-fields' },
+    h('div', { class: 'mx-tpl-side-head' },
+      h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, use ? 'Fill in' : 'Fields'), prog)),
+    fieldsEl,
+    use ? null : h('div', { class: 'mx-tpl-links' },
+      h('button', { class: 'pbv-add-fb', type: 'button', onclick: addField }, 'Add Field')));
+  /* keeping the template, the outline comes first — it is the document's
+     shape; filling one in, the blanks do, because they are the work */
+  const side = h('aside', { class: 'mx-tpl-side' }, back,
+    use ? fillAsk() : null,
+    ...(use ? [fieldsBlock, outlineBlock] : [outlineBlock, fieldsBlock]));
+
+  const SIDE_W = { min: 240, max: 480, base: 320 };
+  const setSideW = (w) => {
+    const v = Math.round(Math.max(SIDE_W.min, Math.min(SIDE_W.max, w)));
+    page.style.setProperty('--mx-side-w', v + 'px');
+    resize.setAttribute('aria-valuenow', String(v));
+    return v;
+  };
+  /* the panel's right edge is a handle: a hairline that thickens under
+     the pointer, wide enough to catch, and gone when the panel is */
+  const resize = h('div', { class: 'mx-resize', role: 'separator', tabindex: '0',
+    'aria-orientation': 'vertical', 'aria-label': 'Resize the outline',
+    'aria-valuemin': String(SIDE_W.min), 'aria-valuemax': String(SIDE_W.max),
+    title: 'Drag to resize · double-click to reset',
+    ondblclick: () => { state.mxSideW = setSideW(SIDE_W.base); save(); },
+    onkeydown: (e) => {
+      const step = e.key === 'ArrowLeft' ? -16 : e.key === 'ArrowRight' ? 16 : 0;
+      if (!step) return;
+      e.preventDefault();
+      state.mxSideW = setSideW((state.mxSideW || SIDE_W.base) + step); save();
+    },
+    onpointerdown: (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const x0 = e.clientX, w0 = side.getBoundingClientRect().width;
+      let w = w0;
+      page.classList.add('is-resizing');
+      const move = (ev) => { w = setSideW(w0 + ev.clientX - x0); };
+      const up = () => {
+        removeEventListener('pointermove', move);
+        removeEventListener('pointerup', up);
+        removeEventListener('pointercancel', up);
+        page.classList.remove('is-resizing');
+        state.mxSideW = w; save();
+      };
+      addEventListener('pointermove', move);
+      addEventListener('pointerup', up);
+      addEventListener('pointercancel', up);
+    } });
+  function showSide(on) {
+    MX.templates.sideHidden = !on;
+    side.inert = !on;
+    page.classList.toggle('is-side-hidden', !on);
+  }
+
+  const page = h('div', { class: 'mx-tpl' + (use ? ' is-use' : '') + (MX.templates.sideHidden ? ' is-side-hidden' : '') },
+    h('div', { class: 'mx-tpl-side-wrap' }, side),
     h('div', { class: 'mx-tpl-main' },
       h('div', { class: 'mx-tpl-bar' },
+        showSideBtn,
         use
           ? h('span', { class: 'mx-tpl-kind' }, h('span', { class: 'mx-tpl-new' }, `New ${t.name || 'document'}`),
               h('span', { class: 'mx-dot' }, 'from the template'))
@@ -1273,12 +2019,29 @@ function templatePage(t, use = false) {
         h('span', { class: 'pb-grow' }),
         !use && t.status === 'draft' ? h('button', { class: 'btn', type: 'button',
           onclick: () => { t.status = 'live'; t.updated = mxNow(); save(); go('templates'); pbToast(`“${t.name || 'Untitled template'}” is published`); } }, 'Publish') : null,
-        word,
+        h('button', { class: 'btn mx-word', type: 'button', onclick: toWord },
+          h('img', { src: 'assets/brand/word.svg', alt: '', 'aria-hidden': 'true' }), 'Open in Word'),
         use
           ? h('button', { class: 'btn btn--primary', type: 'button', onclick: draft }, 'Create Draft')
           : null),
-      docScroll));
-  paintFields(); paintChips(); paintProg();
+      docScroll),
+    resize);
+  side.inert = !!MX.templates.sideHidden;
+  setSideW(state.mxSideW || SIDE_W.base);
+
+  /* `/` anywhere on the page (but not while typing) starts a search */
+  const slash = (e) => {
+    if (!page.isConnected) return removeEventListener('keydown', slash);
+    if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.closest?.('input, textarea, [contenteditable]') || document.querySelector('.pb-dim')) return;
+    if (!page.offsetParent) return;
+    e.preventDefault();
+    find.classList.add('is-open'); qIn.focus();
+  };
+  addEventListener('keydown', slash);
+
+  paintBody(); paintFields(); paintChips(); paintProg();
+  requestAnimationFrame(spy);
   if (!t.name && !use) setTimeout(() => title.focus({ preventScroll: true }), 80);
   return page;
 }
