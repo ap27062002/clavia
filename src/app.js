@@ -1944,15 +1944,17 @@ function openByHash(hash) {
   const art = /^artifact\/(.+)$/.exec(hash);
   if (art) {
     const aid = decodeURIComponent(art[1]);
-    const a = ARTIFACTS[aid] || (typeof pbArtifactById === 'function' ? pbArtifactById(aid) : null);
+    const a = ARTIFACTS[aid]
+      || (typeof pbArtifactById === 'function' ? pbArtifactById(aid) : null)
+      || (typeof mxTplArtifactById === 'function' ? mxTplArtifactById(aid) : null);
     /* the link named an artifact and there is none — that is the 404,
        arrived at the way it actually happens */
     if (!a) { go('artifacts'); notFound(); return true; }
     if (hashArtifact === a.id) return true;   // go() rewrote the hash; not a new request
     hashArtifact = a.id;
-    /* a playbook lives in Playbooks, so that is what sits behind it and
-       what closing it comes back to */
-    go(a.kind === 'playbook' ? 'playbooks' : 'artifacts');
+    /* a playbook lives in Playbooks and a template in Templates, so that is
+       what sits behind it and what closing it comes back to */
+    go(a.kind === 'playbook' ? 'playbooks' : a.kind === 'template' ? 'templates' : 'artifacts');
     /* the address of an artifact opens the artifact, not the library with
        something docked beside it — a link somebody sends you should land
        on the thing itself */
@@ -1973,6 +1975,7 @@ function openByHash(hash) {
   /* a playbook's conversation is made when it is first opened, so a link
      to it makes it again */
   if (typeof pbSessionRoute === 'function' && pbSessionRoute(id)) return true;
+  if (typeof mxTplSessionRoute === 'function' && mxTplSessionRoute(id)) return true;
   return false;
 }
 
@@ -2569,7 +2572,7 @@ function chatPanel(q, pre, about, existing) {
      the full view's other hosts are stood down so its painters no-op */
   threadScroll = h('div', { class: 'thread-scroll cp-scroll' });
   presenceHost = typingHost = queueHost = shareHost = costHost = artsHost = limitHost
-    = repHost = null;
+    = repHost = askHost = null;
 
   const close = closeArtifact = () => {
     main.dataset.artifact = 'closed';
@@ -3848,7 +3851,7 @@ function taggedPerson(text) {
    moment the artifact gets made. */
 let peerRunning = false;
 
-function answer(prompt) {
+function answer(prompt, files = []) {
   /* a conversation building a skill answers as the skill; a prompt that
      carries a skill runs it (skills.js) */
   if (thread?.id?.startsWith('sk-ses-') && typeof skBuildTurn === 'function') return skBuildTurn(ARTIFACTS[thread.id.slice(7)], prompt);
@@ -3856,6 +3859,9 @@ function answer(prompt) {
   /* a conversation working on a playbook is asked about that playbook */
   const onPb = ARTIFACTS[lastArtifactIn()];
   if (onPb?.kind === 'playbook' && typeof playbookTurn === 'function') return playbookTurn(onPb, prompt);
+  /* and one working on a template is asked about that template — with
+     whatever was handed over in the box */
+  if (onPb?.kind === 'template' && typeof templateTurn === 'function') return templateTurn(onPb, prompt, files);
   /* a conversation building a request answers as the request */
   const onRq = thread?.id?.startsWith('rq-ses-') ? ARTIFACTS[thread.id.slice(7)] : null;
   if ((onRq || onPb)?.kind === 'request' && typeof requestTurn === 'function') return requestTurn(onRq || onPb, prompt);
@@ -4109,6 +4115,76 @@ const faceEl = (name, cls = '', attrs = {}) => h('span', Object.assign({
    becomes a real question — two people talking to each other do not
    want a third voice in every gap. One switch, above the box, and only
    once there is somebody to share it with. */
+/* ── what the answer stopped to ask ───────────────────────────
+   Some things cannot be guessed from the ask — how a document is set,
+   what size paper it is for — and guessing wastes the work. The answer
+   stops and asks, in a card over the box you would have answered in,
+   not as another message in the thread.
+
+   One question at a time, the way it is asked out loud. Every question
+   can be skipped, and every question will take an answer that is not on
+   the list: nobody should have to pick the nearest wrong thing. */
+let askHost = null, askSpec = null;
+function chatAsk(spec) {
+  askSpec = spec ? { ...spec, at: 0, answers: {}, typing: false } : null;
+  paintAsk();
+}
+function paintAsk() {
+  if (!askHost) return;
+  askHost.dataset.on = String(!!askSpec);
+  if (!askSpec) return askHost.replaceChildren();
+  const { questions, onDone } = askSpec;
+  const q = questions[askSpec.at];
+  if (!q) { const a = askSpec.answers; chatAsk(null); onDone?.(a); return; }
+
+  const take = (answer) => {
+    askSpec.answers[q.key] = answer;
+    askSpec.at++; askSpec.typing = false;
+    paintAsk();
+  };
+  /* skipping is an answer too: it says take whatever you would have */
+  const skip = h('button', { class: 'cask-skip', type: 'button',
+    onclick: () => take({ key: q.def, skipped: true }) }, 'Skip');
+  const back = askSpec.at > 0 ? h('button', { class: 'cask-back', type: 'button', 'aria-label': 'Back',
+    onclick: () => { askSpec.at--; askSpec.typing = false; paintAsk(); },
+    html: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" '
+      + 'stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>' }) : null;
+
+  /* the answer that is not on the list: the option becomes a field */
+  const other = () => {
+    const input = h('input', { class: 'cask-in', type: 'text', 'aria-label': q.question,
+      placeholder: 'Say what you want instead…',
+      onkeydown: (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); send(); }
+        if (e.key === 'Escape') { e.stopPropagation(); askSpec.typing = false; paintAsk(); }
+      },
+      oninput: () => { go.disabled = !input.value.trim(); } });
+    const send = () => { const v = input.value.trim(); if (v) take({ key: q.def, text: v }); };
+    const go = h('button', { class: 'cask-send', type: 'button', disabled: true, 'aria-label': 'Send', onclick: send,
+      html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" '
+        + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 12l6-6 6 6"/></svg>' });
+    queueMicrotask(() => input.focus());
+    return h('div', { class: 'cask-other' }, input, go);
+  };
+
+  askHost.replaceChildren(h('div', { class: 'cask' },
+    h('div', { class: 'cask-top' }, back,
+      h('span', { class: 'cask-chip' }, q.header),
+      h('span', { class: 'pb-grow' }),
+      h('span', { class: 'cask-n' }, `${askSpec.at + 1} of ${questions.length}`),
+      skip),
+    h('div', { class: 'cask-q' }, q.question),
+    askSpec.typing ? other()
+      : h('div', { class: 'cask-opts' },
+          ...q.options.map(o => h('button', { class: 'cask-opt', type: 'button', onclick: () => take({ key: o.key }) },
+            h('span', { class: 'cask-l' }, o.label),
+            o.desc ? h('span', { class: 'cask-d' }, o.desc) : null)),
+          h('button', { class: 'cask-opt cask-opt--other', type: 'button',
+            onclick: () => { askSpec.typing = true; paintAsk(); } },
+            h('span', { class: 'cask-l' }, 'Something else'),
+            h('span', { class: 'cask-d' }, 'Say it in your own words and I will do what I can.')))));
+}
+
 let repHost = null;
 const repOn = () => !thread || thread.assistant !== false;
 
@@ -4534,6 +4610,7 @@ register('thread', () => {
   artsHost = h('div', { class: 'thread-arts' });
   limitHost = h('div', { class: 'lim-dock', 'data-on': 'false' });
   repHost = h('div', { class: 'arep', 'data-on': 'false' });
+  askHost = h('div', { class: 'cask-dock', 'data-on': 'false' });
   paintShare();
   paintCost();
   paintArts();
@@ -4542,6 +4619,7 @@ register('thread', () => {
   paintReplies();
   paintQueue();
   paintTyping();
+  paintAsk();
 
   const el = h('div', { class: 'thread' },
     h('header', { class: 'thread-head' },
@@ -4596,8 +4674,9 @@ register('thread', () => {
            margin, so anything between the two gets pulled underneath it */
         typingHost,
         queueHost,
-        /* the last thing above the box, so it reads as part of it */
+        /* the last things above the box, so they read as part of it */
         repHost,
+        askHost,
         /* Out of usage is not a message you can send, so there is no
            box to type it in. What replaces the composer says when the
            month comes back and offers the only thing left to do. */
@@ -4619,11 +4698,14 @@ register('thread', () => {
       people: () => (thread?.people || [])
         .filter(p => p.name !== USER.name)
         .map(p => ({ label: p.name, mark: faceEl(p.name, 'tokface').outerHTML })),
-      onSend: (text) => {
-        say('user', text); paintThread();
+      onSend: (text, { pills } = {}) => {
+        /* a file handed over in the box rides with what was asked, the
+           way it does on the page a thing is first made from */
+        const files = (pills || []).filter(p => p.kind === 'file').map(p => ({ name: p.label }));
+        say('user', text, files.length ? { files } : undefined); paintThread();
         /* switched off, it is a chat between people — unless somebody
            calls it in by name */
-        if (repOn() || /@?assistant\b/i.test(text)) answer(text);
+        if (repOn() || /@?assistant\b/i.test(text)) answer(text, files);
       },
     });
   });

@@ -6688,6 +6688,70 @@ body[data-bare] .br-pane { display: none; }
 .cx-g { width: 15px; height: 15px; display: block; }
 
 /* ── where to go next, under an answer ── */
+/* ── what the answer stopped to ask ──
+   A card over the box, not a message in the thread: it is the thing in
+   front of you until it is answered. One question at a time, each
+   choice saying what it means, and a last one for the answer that is
+   not on the list. */
+.cask-dock { display: none; }
+.cask-dock[data-on="true"] { display: block; margin: 0 0 10px; }
+.cask {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  padding: 12px 14px 14px;
+  box-shadow: 0 1px 2px rgba(20,20,19,.03), 0 10px 28px -22px rgba(20,20,19,.3);
+  animation: caskIn 220ms var(--ease-out);
+}
+@keyframes caskIn { from { opacity: 0; transform: translateY(6px); } }
+.cask-top { display: flex; align-items: center; gap: 8px; padding: 0 2px 8px; }
+.cask-back {
+  appearance: none; border: 0; background: none; cursor: pointer; flex: none;
+  width: 22px; height: 22px; margin-left: -4px; border-radius: 6px;
+  display: grid; place-items: center; color: var(--text-faint);
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.cask-back svg { width: 14px; height: 14px; display: block; }
+.cask-back:hover { background: var(--tint); color: var(--text); }
+.cask-chip {
+  font-size: 10.5px; font-weight: 550; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-soft); background: var(--tint); border-radius: 999px; padding: 3px 9px;
+}
+.cask-n { font-size: 11.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.cask-skip {
+  appearance: none; border: 0; background: none; cursor: pointer; font: inherit;
+  font-size: 12.5px; color: var(--text-faint); padding: 3px 7px; border-radius: 6px;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.cask-skip:hover { background: var(--tint); color: var(--text); }
+.cask-q { font-size: 14.5px; color: var(--text); padding: 0 2px 10px; }
+.cask-opts { display: flex; flex-direction: column; gap: 5px; }
+.cask-opt {
+  appearance: none; cursor: pointer; font: inherit; text-align: left;
+  display: block; width: 100%; padding: 9px 13px;
+  background: none; border: 1px solid var(--line); border-radius: 11px;
+  transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.cask-opt:hover, .cask-opt:focus-visible { border-color: var(--line-strong); background: var(--tint); outline: 0; }
+.cask-l { display: block; font-size: 13.5px; font-weight: 550; color: var(--text); }
+.cask-d { display: block; margin-top: 1px; font-size: 12.5px; line-height: 1.45; color: var(--text-soft); }
+.cask-opt--other { border-style: dashed; }
+.cask-opt--other .cask-l { font-weight: 500; color: var(--text-soft); }
+/* saying it in your own words: the option becomes the field */
+.cask-other {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 6px 6px 13px; border: 1px solid var(--line-strong); border-radius: 11px;
+  animation: caskIn 180ms var(--ease-out);
+}
+.cask-in { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font: inherit; font-size: 13.5px; color: var(--text); padding: 5px 0; }
+.cask-in::placeholder { color: var(--text-faint); }
+.cask-send {
+  appearance: none; border: 0; cursor: pointer; flex: none;
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--rail-bg); color: #fff;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.cask-send svg { width: 14px; height: 14px; display: block; }
+.cask-send:disabled { background: #F1EFEB; color: var(--text-faint); cursor: default; }
+
 .sugg { margin-top: 22px; }
 .sugg-h { font-size: 13px; font-weight: 500; color: var(--text); padding: 0 0 6px; }
 .sugg-it {

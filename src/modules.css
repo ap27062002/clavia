@@ -231,12 +231,93 @@
 /* ================================================================
    Templates — the fields down the side, the document beside them
 ================================================================ */
+/* in the shell — docked beside a conversation or filling the screen —
+   the page is the shell's whole height and scrolls inside itself, as a
+   playbook does there */
+.artifact-shell > .mx-tpl { min-height: 0; overflow: hidden; animation: none; }
+.mx-tpl.is-shell .mx-tpl-side { padding: 14px 12px 32px 16px; }
+/* Where the document starts. The way back to the outline floats at the
+   same height, so it is level with the top of the sheet rather than
+   near it — one number, read by both, because two numbers drift. The
+   playbook sets its pair the same way (.pbv-scroll / .pbv-show-idx). */
+.mx-tpl.is-shell { --mx-doc-top: 22px; }
+.mx-tpl.is-shell.is-in-chat { --mx-doc-top: 14px; }
+.mx-tpl.is-shell .mx-tpl-doc { padding: var(--mx-doc-top) 32px 96px; }
+.mx-tpl.is-shell.is-in-chat .mx-tpl-doc { padding: var(--mx-doc-top) 14px 80px; }
+/* the document has a column, not a page, so it gives its margins back */
+
+.mx-tpl.is-in-chat .mx-blk-del { display: none; }
+
 .mx-tpl {
+  position: relative;
   flex: 1; min-height: 0;
-  display: grid; grid-template-columns: 320px minmax(0, 1fr);
+  display: grid; grid-template-columns: var(--mx-side-w, 320px) minmax(0, 1fr);
   animation: rise 420ms var(--ease-out) backwards;
+  /* the panel's column closes and opens in one motion, the document riding along */
+  transition: grid-template-columns 360ms cubic-bezier(.4, 0, .1, 1);
 }
-.mx-tpl-side { min-height: 0; overflow-y: auto; padding: 26px 18px 40px 26px; border-right: 1px solid var(--line); background: #FCFCFB; }
+.mx-tpl.is-side-hidden { grid-template-columns: 0px minmax(0, 1fr); }
+.mx-tpl.is-resizing { transition: none; }
+.mx-tpl.is-resizing, .mx-tpl.is-resizing * { cursor: col-resize !important; user-select: none; }
+/* the panel is held by its right edge in a column that clips, so it slides
+   out whole rather than being squeezed */
+.mx-tpl-side-wrap { grid-column: 1; min-width: 0; min-height: 0; overflow: hidden; display: flex; justify-content: flex-end; }
+.mx-tpl-main { grid-column: 2; }
+.mx-tpl-side {
+  flex: none; box-sizing: border-box; width: var(--mx-side-w, 320px);
+  min-height: 0; overflow-y: auto; padding: 26px 18px 40px 26px;
+  border-right: 1px solid var(--line); background: #FCFCFB;
+  transition: opacity 220ms var(--ease), visibility 0s;
+}
+/* folded away: it fades as it goes, and is out of reach once gone */
+.mx-tpl.is-side-hidden .mx-tpl-side { opacity: 0; visibility: hidden; transition: opacity 220ms var(--ease), visibility 0s 360ms; }
+/* the panel's right edge is a handle: a hairline that thickens under the
+   pointer, wide enough to catch, and gone when the panel is */
+.mx-resize {
+  position: absolute; top: 0; bottom: 0; left: calc(var(--mx-side-w, 320px) - 4px);
+  width: 9px; z-index: 4; cursor: col-resize; outline: 0;
+}
+.mx-resize::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px;
+  background: var(--line-strong); opacity: 0;
+  transition: opacity var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.mx-resize:hover::after, .mx-resize:focus-visible::after { opacity: 1; }
+.mx-tpl.is-resizing .mx-resize::after { opacity: 1; background: var(--text-faint); }
+.mx-tpl.is-side-hidden .mx-resize { display: none; }
+/* the way back to the panel sits where the panel was */
+.mx-show-side { margin-right: 4px; }
+.mx-tpl:not(.is-side-hidden) .mx-show-side { display: none; }
+/* beside a conversation there is no bar to put it in, so it is pinned to
+   the corner of the view — there however far down the document you are,
+   the way the playbook's is */
+.mx-tpl.is-shell .mx-show-side {
+  position: absolute; top: var(--mx-doc-top, 22px); left: 16px; z-index: 3; margin: 0;
+  opacity: 0; visibility: hidden; transform: translateX(-8px);
+  transition: opacity 120ms var(--ease), transform 200ms var(--ease), visibility 0s 120ms;
+}
+.mx-tpl.is-shell.is-side-hidden .mx-show-side {
+  display: grid; opacity: 1; visibility: visible; transform: none;
+  transition: opacity 220ms var(--ease) 180ms, transform 340ms var(--pb-open) 140ms, visibility 0s;
+}
+/* and the sheet keeps clear of it */
+.mx-tpl.is-shell.is-side-hidden .mx-tpl-doc { padding-left: 62px; padding-right: 62px; }
+.mx-tpl.is-shell.is-in-chat.is-side-hidden .mx-tpl-doc { padding-left: 54px; padding-right: 54px; }
+@media (prefers-reduced-motion: reduce) { .mx-tpl, .mx-tpl-side { transition: none; } }
+/* the outline and the fields, one under the other, parted by a hairline */
+.mx-tpl-out, .mx-tpl-fields { min-width: 0; }
+.mx-idx-list { margin: 0 -8px; }
+.mx-tpl-out + .mx-tpl-fields, .mx-tpl-fields + .mx-tpl-out { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line-soft); }
+/* carrying a row in the outline: the same hush the playbook's has */
+.mx-tpl.is-dragging, .mx-tpl.is-dragging * { cursor: grabbing !important; }
+.mx-tpl.is-dragging .pbv-idx-it:hover { background: none; color: var(--text-soft); }
+.mx-tpl.is-dragging .pbv-idx-sec:hover { background: none; }
+.mx-tpl.is-dragging .pbv-idx-it:hover .pbv-idx-grip, .mx-tpl.is-dragging .pbv-idx-sec:hover .pbv-idx-grip,
+.mx-tpl.is-dragging .pbv-idx-sec:hover .pbv-idx-ren, .mx-tpl.is-dragging .pbv-idx-fold { opacity: 0; }
+.mx-tpl.is-dragging .pbv-idx-it:hover .pbv-idx-no, .mx-tpl.is-dragging .pbv-idx-sec:hover .pbv-idx-no { opacity: 1; }
+.mx-tpl.is-dragging .pbv-idx-sec:has(.pbv-idx-ren):hover { padding-right: 30px; }
+.mx-tpl.is-dragging .pbv-idx-it.is-slot:hover, .mx-tpl.is-dragging .pbv-idx-group.is-slot .pbv-idx-sec:hover { background: #F3EFE8; }
+.mx-tpl.is-dragging .pbv-idx-sec.is-drop:hover { background: #F3EAD6; }
 .mx-tpl-side .mx-back { margin: -6px 0 18px -7px; }
 .mx-tpl-side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 0 10px 2px; }
 .mx-tpl-side-t { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
@@ -269,16 +350,177 @@
 .mx-tpl-kind { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-soft); }
 .mx-tpl-bar .btn { padding: 7px 13px; }
 .mx-tpl-doc { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 30px 72px; }
+/* and the sheet keeps clear of the way-back button when the panel is away */
+.mx-tpl.is-side-hidden .mx-tpl-doc { padding-left: 46px; padding-right: 46px; }
 /* the document: a sheet, in the playbook sheet's type */
 .mx-doc {
-  max-width: 754px; margin: 0 auto; padding: 44px 56px 56px;
+  max-width: 754px; margin: 0 auto;
   background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
   box-shadow: 0 1px 2px rgba(20,20,19,.03), 0 12px 32px -24px rgba(20,20,19,.18);
 }
-.mx-doc-title { display: block; width: 100%; overflow: hidden; resize: none; field-sizing: content; font-family: var(--serif) !important; font-size: 30px !important; letter-spacing: -0.01em; line-height: 1.25; margin-bottom: 22px !important; }
-.mx-doc-h { margin: 26px 0 8px; font-family: var(--serif); font-size: 19px; font-weight: 400; letter-spacing: -0.005em; outline: 0; }
-.mx-doc-p { margin: 0 0 12px; font-size: 14px; line-height: 1.75; color: var(--text); outline: 0; }
+/* ── the bar over the sheet ──
+   Slim, and its tools end where the text below ends. Once the page is
+   moving under it, it casts one soft shadow from its own edge. */
+.mx-doc-bar {
+  position: sticky; top: -4px; z-index: 2;
+  display: flex; align-items: center; gap: 8px;
+  /* Both columns of ink end where the text ends. The bar's glyphs sit in
+     a 30px box and a section's chevron in a 26px one, so each is pulled
+     out by its own inset — otherwise the boxes line up and the marks in
+     them do not, which is the thing you actually see. */
+  height: 44px; padding: 0 calc(var(--mx-margin) - 7.5px) 0 var(--mx-margin);
+  background: rgba(255,255,255,.95); backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--line-soft); border-radius: 14px 14px 0 0;
+  transition: box-shadow 220ms var(--ease);
+}
+.mx-doc-bar.is-stuck { box-shadow: 0 12px 16px -14px rgba(20,20,19,.22); }
+.mx-doc-bar .pbv-find.is-open { width: 230px; }
+/* closed, the glass is all there is: the count and the clear are out of the
+   way entirely, so nothing can overflow the 32px and push the glass off it */
+.mx-doc-bar .pbv-find:not(.is-open) .pbv-find-ct,
+.mx-doc-bar .pbv-find:not(.is-open) .pbv-find-x { display: none; }
+.mx-doc-bar .pbv-bar-ctx { background: #FCFBF9; padding: 0 calc(var(--mx-margin) - 7.5px) 0 var(--mx-margin); }
+.mx-fold-all:disabled { opacity: .35; pointer-events: none; }
+.mx-add-sec { flex: none; font-size: 13px; margin-left: 2px; }
 .mx-doc-h:empty::before, .mx-doc-p:empty::before { content: attr(data-ph); color: var(--text-faint); }
+
+/* ── a section on the sheet ──
+   No rule under the heading: its chevron sits at the right corner, and a
+   delete and an add-a-paragraph-here come up beside it under the pointer. */
+.mx-sec:last-child { margin-bottom: 0; }
+.mx-sec[hidden], .mx-blk[hidden] { display: none; }
+.mx-sec-head .pbv-icon { align-self: center; }
+.mx-sec-fold { order: 3; margin: 0 -6.5px 0 0; }
+.mx-sec-fold svg { width: 13px; height: 13px; transform: rotate(90deg); transition: transform 240ms var(--pb-open); }
+.mx-sec.is-folded .mx-sec-fold svg { transform: none; }
+.mx-sec-tool { opacity: 0; order: 2; margin: 0 -4px 0 0; }
+.mx-sec-head:hover .mx-sec-tool, .mx-sec-tool:focus-visible { opacity: 1; }
+.mx-sec-tool svg, .mx-sec-tool .ico { width: 15px; height: 15px; display: block; }
+.mx-sec-del:hover { color: var(--pos-walkaway); background: var(--pos-walkaway-bg); }
+.mx-sec-wrap { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 280ms var(--pb-open), opacity 200ms var(--ease); }
+.mx-sec.is-folded .mx-sec-wrap { grid-template-rows: 0fr; opacity: 0; }
+/* clipped only while it moves, so nothing is cut off at rest */
+.mx-sec.is-folded .mx-sec-body, .mx-sec.is-folding .mx-sec-body { overflow: hidden; margin: 0 -14px; padding: 0 14px; }
+.mx-sec.is-folded { margin-bottom: 10px; }
+.mx-sec.is-folded .mx-sec-head { margin-bottom: 0; }
+.mx-sec.is-folded + .mx-sec:not(.is-folded) { margin-top: 26px; }
+/* a paragraph, and a delete out in the margin under the pointer */
+.mx-blk { position: relative; border-radius: 6px; }
+.mx-blk.is-new, .mx-sec.is-new { animation: mxBlkIn 480ms var(--ease-out); }
+@keyframes mxBlkIn { from { opacity: 0; transform: translateY(-4px); } }
+/* going to a paragraph from the outline: it is lit where it stands */
+.mx-blk.is-at { animation: mxBlkAt 1.6s var(--ease); }
+@keyframes mxBlkAt {
+  0%, 25% { background: #FBEBC7; box-shadow: 0 0 0 7px #FBEBC7; }
+  100% { background: transparent; box-shadow: 0 0 0 7px transparent; }
+}
+.mx-blk.is-leaving, .mx-sec.is-leaving {
+  opacity: 0; overflow: hidden; margin-bottom: 0;
+  transition: height 240ms var(--ease), opacity 160ms var(--ease), margin 240ms var(--ease);
+}
+/* ══ How the document is set ══════════════════════════════════════
+   A template is a document somebody will open in Word, so what is on
+   screen is the page that comes out of it: the paper it is for, the
+   face it is set in, the size it is set at, and how it is laid out. */
+.mx-doc { --mx-page: 794px; --mx-margin: 96px; }
+/* beside a conversation the page cannot afford an inch of white on each
+   side, so the margin narrows and everything set from it comes with it */
+.mx-tpl.is-in-chat .mx-doc { --mx-margin: 48px; }
+.is-page-a4 { --mx-page: 794px; }        /* 210mm at 96dpi */
+.is-page-letter { --mx-page: 816px; }    /* 8.5in */
+.is-page-a3 { --mx-page: 1123px; }       /* 297mm */
+.mx-doc.is-page-a4, .mx-doc.is-page-letter, .mx-doc.is-page-a3 { max-width: var(--mx-page); }
+.is-face-times .mx-doc-in { font-family: 'Times New Roman', Times, serif; }
+.is-face-arial .mx-doc-in { font-family: Arial, Helvetica, sans-serif; }
+.is-face-calibri .mx-doc-in { font-family: Calibri, Candara, Segoe, sans-serif; }
+.is-size-10 .mx-doc-in { --mx-pt: 13.3px; }
+.is-size-11 .mx-doc-in { --mx-pt: 14.7px; }
+.is-size-12 .mx-doc-in { --mx-pt: 16px; }
+/* the page: a sheet with a hairline and a one-inch margin, square at the
+   corners, so it reads as paper and not as a card */
+.mx-doc { border-radius: 4px; }
+.mx-doc .mx-doc-bar { border-radius: 4px 4px 0 0; }
+.mx-doc-in { padding: var(--mx-margin) var(--mx-margin) calc(var(--mx-margin) * 1.2); }
+.mx-doc-in, .mx-doc-in .mx-doc-p, .mx-doc-in .mx-doc-h, .mx-doc-in .mx-doc-title { font-family: inherit; }
+.mx-doc-p { font-size: var(--mx-pt, 14.7px); line-height: 1.5; margin: 0 0 11px; color: var(--text); outline: 0; }
+.mx-doc-h { font-size: var(--mx-pt, 14.7px); font-weight: 700; letter-spacing: 0; margin: 0; outline: 0;
+  flex: 1 1 auto; min-width: 6ch; overflow-wrap: break-word; }
+.mx-doc-title {
+  display: block; width: 100%; overflow: hidden; resize: none; field-sizing: content;
+  font-family: inherit !important; font-size: calc(var(--mx-pt, 14.7px) * 1.6) !important;
+  font-weight: 700; letter-spacing: 0; line-height: 1.3; margin-bottom: 22px !important;
+}
+.mx-sec { position: relative; margin-bottom: 18px; }
+.mx-sec-head { position: relative; display: flex; align-items: baseline; gap: 0; margin-bottom: 9px; }
+.mx-sec-n {
+  font-family: inherit; font-size: var(--mx-pt, 14.7px); font-weight: 700;
+  color: var(--text); width: 48px; flex: none;
+}
+.mx-sec-head .mx-doc-h { margin: 0 auto 0 0; }
+/* the chevron and the tools are the app's, not the document's: they come
+   up under the pointer and are gone again */
+.mx-sec-fold { opacity: 0; }
+.mx-sec-head:hover .mx-sec-fold, .mx-sec-fold:focus-visible { opacity: 1; }
+.mx-blk-del { position: absolute; right: -34px; top: -1px; width: 24px; height: 24px; opacity: 0; }
+.mx-blk-del svg { width: 14px; height: 14px; }
+.mx-blk:hover .mx-blk-del, .mx-blk-del:focus-visible { opacity: 1; }
+.mx-blk-del:hover { color: var(--pos-walkaway); background: var(--pos-walkaway-bg); }
+
+/* Numbered clauses — the title centred in caps and the text justified. */
+.is-layout-legal .mx-doc-title {
+  font-size: calc(var(--mx-pt, 14.7px) * 1.08) !important;
+  text-align: center; text-transform: uppercase; letter-spacing: .02em;
+  margin-bottom: 30px !important;
+}
+.is-layout-legal .mx-doc-p { text-align: justify; }
+/* Headed sections — the house layout, and what a template with no
+   setting is. Set exactly as a playbook's sheet is set, because it is
+   the same sheet doing the same job: a serif heading with its number at
+   the margin, the text ranged left in the app's own face, and a section
+   given room to end before the next one starts. The paper, the face and
+   the size still go into the file Word opens — this is the reading of
+   it, not the printing of it. */
+.mx-doc.is-layout-headed { --mx-page: 754px; --mx-margin: 56px; }
+.mx-tpl.is-in-chat .mx-doc.is-layout-headed { --mx-margin: 34px; }
+.is-layout-headed .mx-doc-in {
+  font-family: var(--font);
+  padding: 30px var(--mx-margin) 28px;
+}
+.is-layout-headed .mx-doc-title {
+  font-family: var(--serif) !important; font-size: 27px !important;
+  font-weight: 400; letter-spacing: -0.012em; line-height: 1.25;
+  text-align: left; text-transform: none;
+  margin-bottom: 34px !important;
+}
+.is-layout-headed .mx-sec { margin-bottom: 38px; }
+.is-layout-headed .mx-sec-head { align-items: baseline; gap: 8px; margin: 0 0 8px; }
+.is-layout-headed .mx-sec-n {
+  font-family: var(--serif); font-size: 19px; font-weight: 400;
+  color: var(--text-faint); width: auto; flex: none;
+}
+.is-layout-headed .mx-doc-h {
+  font-family: var(--serif); font-size: 19px; font-weight: 400;
+  letter-spacing: -0.005em; margin: 0 auto 0 0;
+}
+.is-layout-headed .mx-doc-p { font-family: var(--font); font-size: 14px; line-height: 1.75; margin: 0 0 12px; }
+.is-layout-headed .mx-blk:last-child .mx-doc-p { margin-bottom: 0; }
+/* Plain letter — no headings at all, one paragraph after another. */
+.is-layout-letter .mx-sec-head { display: none; }
+.is-layout-letter .mx-sec { margin-bottom: 0; }
+.is-layout-letter .mx-doc-p { margin-bottom: 14px; }
+
+/* ── what a search found ──
+   The words are in the document itself, so the browser's own highlight
+   tints them where they stand, and the one you are on is tinted apart. */
+::highlight(mx-find) { background-color: #FFE680; color: inherit; }
+::highlight(mx-find-cur) { background-color: #FFBE3D; color: inherit; }
+.mx-doc-none { margin: 4px 0 0; font-size: 13.5px; color: var(--text-soft); }
+.mx-doc-none[hidden] { display: none; }
+/* a search opens what has been folded away, so what it found can be read */
+.mx-doc-body.is-searching .mx-sec.is-folded .mx-sec-wrap { grid-template-rows: 1fr; opacity: 1; transition: none; }
+.mx-doc-body.is-searching .mx-sec.is-folded .mx-sec-body { overflow: visible; }
+.mx-doc-body.is-searching .mx-sec.is-folded .mx-sec-head { margin-bottom: 8px; }
+.mx-doc-body.is-searching .mx-sec.is-folded { margin-bottom: 26px; }
 /* a blank: its field's name in soft ink on a dotted line, until it has a value */
 .mx-chip {
   cursor: pointer; border-radius: 3px; padding: 1px 1px; margin: 0 1px;
@@ -372,8 +614,8 @@
 @media (max-width: 980px) {
   .mx-req-grid { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .mx-req-side { position: static; }
-  .mx-tpl { grid-template-columns: 260px minmax(0, 1fr); }
-  .mx-doc { padding: 30px 28px 40px; }
+  .mx-doc { --mx-margin: 28px; }
+  .mx-blk-del { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .mx-size.is-reading, .mx-rev-td.is-reading::after { animation: none; }

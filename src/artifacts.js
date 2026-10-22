@@ -3114,10 +3114,12 @@ function openArtifact(a, { full = false } = {}) {
           onclick: () => { closeMenu(); a.vi = i; reopen(); },
         },
           h('span', { class: 'ver-row-tag' }, versionLabel(a, i)),
-          /* when it was made is what tells one version from another; who
-             made it is the same answer on nearly every row */
+          /* when it was made, and under it what was made — who made it is
+             the same answer on nearly every row, so it is left to the
+             full history where there is room for it */
           h('span', { class: 'ver-row-main' },
-            h('span', { class: 'ver-row-when' }, v.when)))));
+            h('span', { class: 'ver-row-when' }, v.when),
+            v.name ? h('span', { class: 'ver-row-what' }, v.name) : null))));
       document.body.append(sub);
       const r = rowEl.getBoundingClientRect();
       const w = sub.offsetWidth, hgt = sub.offsetHeight;
@@ -3173,7 +3175,7 @@ function openArtifact(a, { full = false } = {}) {
         h('span', { class: 'ver-row-tag' }, versionLabel(a, i)),
         h('span', { class: 'ver-row-main' },
           h('span', { class: 'ver-row-when' }, v.when),
-          h('span', { class: 'ver-row-by' }, v.by)),
+          h('span', { class: 'ver-row-by' }, v.name ? `${v.name} · ${v.by}` : v.by)),
         latest ? h('span', { class: 'ver-row-flag' }, 'Latest') : null,
       );
     }).reverse();
@@ -3360,8 +3362,14 @@ function openArtifact(a, { full = false } = {}) {
            there is no conversation here */
         full ? null : vBtn,
         ...(made.extras || []),
-        full || a.kind === 'agent' ? null : editBtn,
-        full ? null : commentLayer(a, shell),
+        /* Docked, the chat it would edit in is already the thing beside
+           it, and the button collapses the panel rather than going
+           anywhere — so where the full-screen toggle is, this is not.
+           A template takes no comments either: it is a document to be
+           used, and what there is to say about it is said in its own
+           conversation. */
+        full || a.kind === 'agent' || a.kind === 'template' ? null : editBtn,
+        full || a.kind === 'template' ? null : commentLayer(a, shell),
         /* a draft carries its own destination at the foot, beside Send —
            where it belongs, since sending and exporting are the same
            decision made two different ways */

@@ -23,7 +23,11 @@
 
 const MX = {
   vault:     { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, files: {} },
-  templates: { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, values: {} },
+  /* fold: sections folded on the sheet, sideHidden: the panel put away
+     on the page, chatSideHidden: the same beside a conversation, where
+     there is less room and the document has it to start with */
+  templates: { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, values: {},
+               fold: {}, sideHidden: false, chatSideHidden: true },
   requests:  { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } } },
   projects:  { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, items: {} },
   agents:    { open: null },   // 'new', 'build', 'build/done', or an agent's id
@@ -851,18 +855,22 @@ function fileLook(v, f) {
 const mxTemplate = (id) => mxData().templates.find(t => t.id === id) || null;
 /* the seeded templates have been revised a few times; anything made here starts at 1 */
 const MX_TPL_VER = { 'mutual-nda': 4, 'one-way-nda': 2, 'msa-short': 3, dpa: 2, 'order-form': 5, 'non-renewal': 1, reseller: 1 };
-const mxTplVer = (t) => t.version || MX_TPL_VER[t.id] || 1;
+const mxTplVer = (t) => t.versions?.length || t.version || MX_TPL_VER[t.id] || 1;
 const MX_TPL_TABS = { Agreement: 'Agreements', Addendum: 'Addenda', 'Order form': 'Order Forms', Letter: 'Letters' };
 
 function templatesView() {
   const o = MX.templates.open;
   if (o === 'new') return mxCreatePage({ view: 'templates', back: 'Templates', title: 'Create New Template',
     placeholder: 'Describe the document you want a template for, or add one of your own', run: buildTemplate });
-  /* #templates/<id> is the template itself; #templates/<id>/use is a document being made from it */
+  /* #templates/<id>/use is a document being made from the template, and
+     has a page of its own. #templates/<id> is the template, which is an
+     artifact: the list shows, and the document opens over it. */
   const [id, sub] = (o || '').split('/');
   const t = id && mxTemplate(id);
   if (o && !t) MX.templates.open = null;
-  return t ? templatePage(t, sub === 'use') : templateList();
+  if (t && sub === 'use') return templatePage(t, true);
+  if (t) { MX.templates.open = null; queueMicrotask(() => mxTplView(t)); }
+  return templateList();
 }
 
 function templateList() {
@@ -881,27 +889,33 @@ function templateList() {
       : k === 'status' ? PB_ORDER[x.status] : (x[k] || '').toLowerCase(),
     cells: (x) => [[mxTile('tpl'), h('span', { class: 'pb-row-name' }, x.name || 'Untitled template')], x.kind, pbStatus(x.status), 'v' + mxTplVer(x),
       String(x.used), mxPerson(x.owner), pbWhen(x.updated)],
-    open: (x) => mxOpen('templates', x.id),
-    menu: (x, row) => [
-      { label: 'Use Template', icon: 'fillin', run: () => mxOpen('templates', x.id + '/use') },
-      { label: 'Open', icon: 'files', run: () => mxOpen('templates', x.id) },
-      { label: 'Duplicate', icon: 'copy', run: () => {
-        const c = structuredClone(x);
-        Object.assign(c, { id: pbUid('tpl'), name: (x.name || 'Untitled template') + ' copy', status: 'draft', used: 0, version: 1, owner: USER.name, updated: mxNow() });
-        d.templates.splice(d.templates.indexOf(x) + 1, 0, c); save(); MX.flash = c.id; t.paint();
-      } },
-      { rule: true },
-      { label: 'Delete', icon: 'trash', danger: true, run: () => mxRemove(d.templates, x, row, 'template', (back) => back && t.paint()) },
-    ],
+    open: (x) => mxTplView(x),
+    /* the same things in the same order a playbook's row offers, because
+       they are the same things: see it, work on it, name it, hand it on,
+       copy it — and the one that destroys it last, after a rule. Open in
+       Word is the one a playbook has no use for. */
+    menu: (x, row) => {
+      GLYPHS.retitle ||= '<path d="M5.5 7V5.5h13V7"/><path d="M12 5.5v13"/><path d="M9.5 18.5h5"/>';
+      return [
+        { label: 'View', icon: 'look', run: () => mxTplView(x) },
+        { label: 'Edit with Chat', icon: 'rename', run: () => mxTplEditInChat(x) },
+        { label: 'Rename', icon: 'retitle', run: () => mxTplRename(x, () => t.paint()) },
+        { label: 'Share', icon: 'share', run: () => mxTplShare(x) },
+        { label: 'Duplicate', icon: 'copy', run: () => mxTplDuplicate(x) },
+        { label: 'Open in Word', icon: 'download', run: () => mxTplToWord(x) },
+        { rule: true },
+        { label: 'Delete', icon: 'trash', danger: true, run: () => mxRemove(d.templates, x, row, 'template', (back) => back && t.paint()) },
+      ];
+    },
   });
   return mxListPage('Templates', mxCta('New Template', (btn, keyboard) => pbWaysMenu(btn, 'mx-tpl-new', [
     { key: 'ai', name: 'Build with AI', desc: 'Describe the document, and Clavia drafts it with its blanks named.',
       icon: () => quillEl('static', { cls: 'pb-way-quill' }) },
     { key: 'upload', name: 'Upload Template', desc: 'Upload one of your own agreements, and its terms become the blanks.',
       icon: () => { const w = h('span', { html: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + APM_IC.upload + '</svg>' }); return w.firstChild; } },
-    { key: 'blank', name: 'Start blank', desc: 'An empty page. Write it, and mark the blanks yourself.', icon: PB_WAYS[2].icon },
   ], (k) => {
     if (k === 'ai') return mxOpen('templates', 'new');
+    /* two ways in: say what it should be, or hand over one you already have */
     if (k === 'upload') {
       /* a file from your computer: its name and kind are enough to start from, as with Build with AI */
       const pick = h('input', { type: 'file', accept: '.doc,.docx,.pdf,.rtf,.txt,.odt', style: 'display:none' });
@@ -918,11 +932,13 @@ function templateList() {
   }, { keyboard }), true), t.el);
 }
 
-function newTemplate(fields, flash) {
+/* open = false leaves it where it is: built with AI, a template opens in
+   its conversation instead, which is a different place to land */
+function newTemplate(fields, flash, open = true) {
   const t = { id: pbUid('tpl'), status: 'draft', owner: USER.name, updated: mxNow(), used: 0, version: 1, ...fields };
   mxData().templates.unshift(t); save();
   if (flash) MX.flash = t.id;
-  mxOpen('templates', t.id);
+  if (open) mxOpen('templates', t.id);
   return t;
 }
 /* Scripted for now: the nearest template we have, under the name you gave it. */
@@ -935,12 +951,207 @@ function templateFrom(text, name) {
   return { name: clean || seed.name, kind: seed.kind, description: seed.description,
     fields: structuredClone(seed.fields), body: structuredClone(seed.body) };
 }
+/* It says what it is doing while it does it, and then stops: how a
+   document is set cannot be read off the ask, and setting it wrong wastes
+   the draft. So the conversation opens on that one question, and the
+   template is drafted — and kept — the way you answer it. (A playbook has
+   nothing to ask, so buildPlaybook in playbooks.js goes straight through.) */
 function buildTemplate(text, files, step) {
   const from = text || files.join(' ');
-  step(files.length ? `Reading ${files[0]}` : 'Working out what the document needs');
-  setTimeout(() => step('Drafting it, and naming the blanks'), 1100);
-  setTimeout(() => { MX.templates.open = null; newTemplate(templateFrom(from, text ? null : files[0]), true); }, 2300);
+  const steps = [
+    files.length ? `Reading ${files.length === 1 ? files[0] : files.length + ' files'}` : 'Reading your description',
+    'Working out the sections it needs',
+  ];
+  let i = 0;
+  const tick = () => {
+    step(steps[i]);
+    if (++i < steps.length) return setTimeout(tick, 800);
+    setTimeout(() => {
+      if (state.view !== 'templates' || MX.templates.open !== 'new') return;   // left while it was writing
+      const t = newTemplate(templateFrom(from, text ? null : files[0]), true, false);
+      mxTplEditInChat(t, mxTplAskSet(t, text, files), true);
+    }, 800);
+  };
+  tick();
 }
+
+/* the questions, and what answering them does: the template is set that
+   way, the draft is described, and the document opens beside it */
+function mxTplAskSet(t, text, files) {
+  queueMicrotask(() => chatAsk({
+    questions: MX_SET_KEYS.map(k => ({
+      key: k, header: MX_SET[k].label, question: MX_SET[k].ask,
+      options: MX_SET[k].options, def: MX_SET[k].def,
+    })),
+    onDone: (answers) => {
+      t.set = Object.fromEntries(MX_SET_KEYS.map(k => [k, answers[k]?.key || MX_SET[k].def]));
+      t.updated = mxNow(); save();
+      mxTplEnsureVersions(t);
+      /* what was asked for in words that are not on the list is kept and
+         said back, because the document cannot be set to it */
+      const asked = MX_SET_KEYS.filter(k => answers[k]?.text)
+        .map(k => `${MX_SET[k].label.toLowerCase()}: “${answers[k].text}”`);
+      say('user', asked.length ? asked.join('; ') : mxSetSays(t));
+      for (const m of mxTplBuiltIntro(t, text, files, asked).slice(1)) say('bot', m.answer, { ...m, text: m.answer, thinking: false });
+      paintThread();
+      queueMicrotask(() => openArtifact(mxTplArtifact(t)));
+    },
+  }));
+  return [
+    { role: 'user', text: text || `Make a template from ${files.join(', ')}.`,
+      files: files.length ? files.map(name => ({ name })) : null },
+    { role: 'bot', cites: null, artifact: null,
+      answer: `I have the sections for ${t.name || 'the template'}. A few things about how it `
+        + 'should be set and I will write it that way — it is the difference between something '
+        + 'you read here and something you can send.',
+      steps: [
+        files.length
+          ? { source: 'internal', query: `Read ${files.length === 1 ? 'the file you gave it' : 'the files you gave it'}`,
+              rows: files.map(name => ({ title: name, meta: 'reference' })) }
+          : { source: 'think', query: 'Read what the document is for' },
+      ] },
+  ];
+}
+
+/* ── the things a row can do ──────────────────────────────────
+   The same three a playbook's row does, behaving the same way
+   (renamePlaybook, sharePlaybook, duplicatePlaybook in playbooks.js).
+   Delete is mxRemove, which already does what deletePlaybook does. */
+
+/* Renaming from the list: a small dialog with the name selected, so
+   typing replaces it. Enter keeps it, Escape or a click outside leaves
+   it as it was, and the toast can put the old one back. */
+function mxTplRename(t, repaint) {
+  const dim = h('div', { class: 'pb-dim', onclick: (e) => { if (e.target === dim) close(); } });
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } };
+  const close = () => { removeEventListener('keydown', onKey, true); dim.classList.add('is-closing'); setTimeout(() => dim.remove(), 150); };
+  const input = h('input', { class: 'pb-rename-in', type: 'text', value: t.name || '', placeholder: 'Untitled template',
+    'aria-label': 'Template name', spellcheck: 'false',
+    oninput: () => { ok.disabled = !input.value.trim() || input.value.trim() === (t.name || ''); },
+    onkeydown: (e) => { if (e.key === 'Enter' && !ok.disabled) keep(); } });
+  const keep = () => {
+    const was = t.name;
+    t.name = input.value.trim(); t.updated = mxNow(); save();
+    close();
+    MX.flash = t.id; repaint?.();
+    pbToast(`Renamed to “${t.name}”`, { label: 'Undo', run: () => {
+      t.name = was; t.updated = mxNow(); save(); MX.flash = t.id; repaint?.();
+    } });
+  };
+  const ok = h('button', { class: 'pb-btn pb-btn--primary', type: 'button', disabled: true, onclick: keep }, 'Rename');
+  dim.append(h('div', { class: 'pb-dlg pb-confirm pb-rename', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Rename template' },
+    h('h2', { class: 'pb-dlg-t' }, 'Rename Template'),
+    input,
+    h('footer', { class: 'pb-confirm-foot' },
+      h('button', { class: 'pb-btn', type: 'button', onclick: close }, 'Cancel'), ok)));
+  document.body.append(dim);
+  addEventListener('keydown', onKey, true);
+  requestAnimationFrame(() => { input.focus(); input.select(); });
+}
+
+/* the share dialog the rest of the app uses, pointed at a template */
+function mxTplShare(t) {
+  t.share ||= { people: [{ name: t.owner, role: 'owner' }], general: 'me',
+    generalRole: 'view', published: false };
+  publishDialog({ id: 'template:' + t.id, name: t.name || 'Untitled template', kind: 'chat',
+    url: `clavia.app/templates/${t.id}`, publish: t.share }, save);
+}
+
+/* a copy sits under the one it came from and starts its own history: its
+   own blocks, its own count, a draft again, and yours */
+function mxTplDuplicate(t) {
+  const d = mxData();
+  const copy = structuredClone(t);
+  Object.assign(copy, { id: pbUid('tpl'), name: (t.name || 'Untitled template') + ' copy',
+    status: 'draft', used: 0, version: 1, owner: USER.name, updated: mxNow() });
+  delete copy.share;
+  copy.body.forEach(b => { b.id = pbUid('blk'); });
+  d.templates.splice(d.templates.indexOf(t) + 1, 0, copy);
+  save();
+  MX.flash = copy.id;
+  mxClose('templates'); go('templates');
+}
+
+/* ── Open in Word ─────────────────────────────────────────────
+ The template as it stands, filled where it is filled, set the way it
+ is set on the page, as a file Word opens. It is reached from the
+ list: nothing stands over the document itself. */
+function mxTplToWord(t, vals = {}) {
+  const esc = (x) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const txt = (x) => esc(x).replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => esc(vals[k]?.trim() || `[${mxFieldLabel(t, k)}]`));
+  const layout = mxSet(t, 'layout'), pt = mxSet(t, 'size');
+  const face = { times: "'Times New Roman',serif", arial: 'Arial,sans-serif', calibri: 'Calibri,sans-serif' }[mxSet(t, 'face')];
+  const paper = { a4: '21cm 29.7cm', letter: '8.5in 11in', a3: '29.7cm 42cm' }[mxSet(t, 'page')];
+  const style = `@page{size:${paper};margin:2.54cm}`
+    + `body{font-family:${face};font-size:${pt}pt;line-height:1.5${layout === 'legal' ? ';text-align:justify' : ''}}`
+    + (layout === 'legal'
+      ? `h1{font-size:${+pt + 1}pt;font-weight:bold;text-align:center;text-transform:uppercase;margin:0 0 22pt}`
+        + `h2{font-size:${pt}pt;font-weight:bold;margin:16pt 0 8pt}p{margin:0 0 8pt}`
+      : `h1{font-size:${+pt + 7}pt;font-weight:bold;margin:0 0 18pt}`
+        + `h2{font-size:${+pt + 1}pt;font-weight:bold;margin:16pt 0 6pt}p{margin:0 0 10pt}`);
+  /* a numbered layout carries its section numbers into the file, because
+     that is what makes it the document it is. Paragraphs are paragraphs:
+     Word does not number them and neither does this. */
+  let si = 0;
+  const body = t.body.filter(b => (b.h ?? b.p).trim()).map(b => {
+    if (layout === 'letter') return b.h !== undefined ? '' : `<p>${txt(b.p)}</p>`;
+    if (b.h !== undefined) { si++; return `<h2>${layout === 'legal' ? si + '.&nbsp;&nbsp;&nbsp;&nbsp;' : ''}${txt(b.h)}</h2>`; }
+    return `<p>${txt(b.p)}</p>`;
+  }).join('');
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8">`
+    + `<title>${esc(t.name || 'Untitled template')}</title><style>${style}</style></head>`
+    + `<body><h1>${esc(t.name || 'Untitled template')}</h1>${body}</body></html>`;
+  const a = h('a', { href: URL.createObjectURL(new Blob(['﻿' + html], { type: 'application/msword' })),
+    download: `${(t.name || 'Untitled template').replace(/[\\/:*?"<>|]+/g, ' ').trim()}.doc` });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  pbToast(`“${t.name || 'Untitled template'}” is downloading for Word`);
+}
+
+/* ── How a document is set ────────────────────────────────────
+   Three things decide whether what is on screen is the document that
+   comes out of Word: how it is laid out, what paper it is for, and what
+   it is set in. A template keeps all of them; everything shipped
+   predates the question and takes the defaults. */
+const MX_SET = {
+  layout: {
+    label: 'Layout', def: 'headed', ask: 'How should the document be laid out?',
+    options: [
+      { key: 'legal', label: 'Numbered clauses', desc: 'Title centred in caps, sections numbered, text justified. How an agreement is set.' },
+      { key: 'headed', label: 'Headed sections', desc: 'A heading over each section, text ranged left.' },
+      { key: 'letter', label: 'Plain letter', desc: 'No headings — one paragraph after another, as a notice is written.' },
+    ] },
+  page: {
+    label: 'Paper', def: 'a4', ask: 'What paper is it for?',
+    options: [
+      { key: 'a4', label: 'A4', desc: '210 × 297mm. The rest of the world.' },
+      { key: 'letter', label: 'US Letter', desc: '8.5 × 11in. North America.' },
+      { key: 'a3', label: 'A3', desc: '297 × 420mm. For schedules that will not fit.' },
+    ] },
+  face: {
+    label: 'Typeface', def: 'times', ask: 'What should it be set in?',
+    options: [
+      { key: 'times', label: 'Times New Roman', desc: 'What most agreements are still set in.' },
+      { key: 'arial', label: 'Arial', desc: 'Plainer, and what a lot of in-house paper uses.' },
+      { key: 'calibri', label: 'Calibri', desc: "Word's own default since 2007." },
+    ] },
+  size: {
+    label: 'Size', def: '11', ask: 'How big should the text be?',
+    options: [{ key: '10', label: '10 pt' }, { key: '11', label: '11 pt' }, { key: '12', label: '12 pt' }],
+  },
+};
+const MX_SET_KEYS = Object.keys(MX_SET);
+/* what a template is set as, falling back to the default for anything it
+   does not say */
+const mxSet = (t, k) => {
+  const g = MX_SET[k];
+  return g.options.some(o => o.key === t?.set?.[k]) ? t.set[k] : g.def;
+};
+const mxSetLabel = (t, k) => MX_SET[k].options.find(o => o.key === mxSet(t, k)).label;
+const mxSetClasses = (t) => MX_SET_KEYS.map(k => ` is-${k}-${mxSet(t, k)}`).join('');
+/* how it reads in a sentence: "numbered clauses on A4, Times New Roman 11 pt" */
+const mxSetSays = (t) => `${mxSetLabel(t, 'layout').toLowerCase()} on ${mxSetLabel(t, 'page')}, `
+  + `${mxSetLabel(t, 'face')} ${mxSetLabel(t, 'size')}`;
 
 const mxFieldLabel = (t, key) => t.fields.find(f => f.key === key)?.label || key;
 
@@ -1000,12 +1211,60 @@ function mxReadDeal(t, text) {
 /* Two pages from one: the template itself, where its wording and its blanks
    are written and kept (use = false), and a document being made from it,
    where the blanks are filled by hand, from a document, or from a sentence
-   about the deal (use = true). Only the second has values. */
-function templatePage(t, use = false) {
+   about the deal (use = true). Only the second has values.
+
+   inChat is the same page docked beside its conversation: the way back and
+   the Publish button are the shell's there, so this one does not repeat
+   them. */
+function templatePage(t, use = false, shell = false, frozen = false) {
+  /* An older version is a record, not a document: it reads, and nothing
+     on it can be moved, renamed or deleted. The newest one is the
+     template itself and is typed into wherever it is open. */
+  const editable = !use && !frozen;
+  /* In the shell the document is either the whole screen or docked
+     beside a conversation. Full, it is read as a page and the outline is
+     open; docked, the document takes the width and the outline is one
+     click away. */
+  const full = shell && !!MX.templates.full;
+  const inChat = shell && !full;
   const vals = use ? (MX.templates.values[t.id] ||= {}) : {};
   const filled = () => t.fields.filter(f => vals[f.key]?.trim()).length;
   const prog = h('span', { class: 'mx-fill-n' });
   const paintProg = () => { prog.textContent = !t.fields.length ? '' : use ? `${filled()} of ${t.fields.length} filled` : mxPlural(t.fields.length, 'field'); };
+
+  /* ── the document, read as sections ───────────────────────────
+     The body is a run of headings and paragraphs. A heading and the
+     paragraphs under it are a section — that is what folds, what the
+     outline lists, and what is carried to a new place. Anything written
+     before the first heading is the opening, which has no heading to
+     fold. Every block carries a name of its own so all three can speak
+     about one without counting to it. */
+  for (const b of t.body) b.id ||= pbUid('blk');
+  const blockOf = (id) => t.body.find(b => b.id === id) || null;
+  /* filling a document shows only what has been written; keeping the
+     template shows the empty ones too, so they can be written in */
+  const written = () => use ? t.body.filter(b => (b.h ?? b.p).trim()) : t.body;
+  const groups = () => {
+    const gs = [];
+    let cur = null;
+    for (const b of written()) {
+      if (b.h !== undefined) { cur = { head: b, blocks: [] }; gs.push(cur); }
+      else {
+        if (!cur) { cur = { head: null, blocks: [] }; gs.push(cur); }
+        cur.blocks.push(b);
+      }
+    }
+    return gs;
+  };
+  /* a blank reads as its field's name here, or as what was filled in */
+  const plain = (s) => (s || '').replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => (use && vals[k]?.trim()) || mxFieldLabel(t, k));
+  const secName = (g) => g.head ? (plain(g.head.h).trim() || 'Untitled section') : 'Opening';
+  const paraName = (b) => {
+    const s = plain(b.p).replace(/\s+/g, ' ').trim();
+    return !s ? 'Empty paragraph' : s.length > 64 ? s.slice(0, 62).trimEnd() + '…' : s;
+  };
+  const secId = (g) => g.head ? g.head.id : 'opening';
+  const groupOf = (id) => groups().find(g => secId(g) === id) || null;
 
   /* ── the document: every blank a chip that fills as its field is typed ── */
   const chip = (key) => h('span', { class: 'mx-chip', 'data-key': key, contenteditable: 'false', tabindex: '-1' });
@@ -1031,17 +1290,15 @@ function templatePage(t, use = false) {
   let last = null;       // where the caret last was, for a new blank
   const block = (b) => {
     const isH = b.h !== undefined;
-    if (use) { const el = h(isH ? 'h2' : 'p', { class: isH ? 'mx-doc-h' : 'mx-doc-p' }); fill(el, isH ? b.h : b.p); return el; }
+    if (!editable) { const el = h(isH ? 'h2' : 'p', { class: isH ? 'mx-doc-h' : 'mx-doc-p' }); fill(el, isH ? b.h : b.p); return el; }
     const el = h(isH ? 'h2' : 'p', { class: isH ? 'mx-doc-h' : 'mx-doc-p', contenteditable: 'plaintext-only', spellcheck: 'false',
       'data-ph': isH ? 'Heading' : 'Write here',
-      oninput: () => { b[isH ? 'h' : 'p'] = read(el); t.updated = mxNow(); save(); },
+      oninput: () => { b[isH ? 'h' : 'p'] = read(el); t.updated = mxNow(); save(); if (isH) paintIdx(); else queueIdx(); },
       onkeydown: (e) => {
         if (e.key !== 'Enter') return;
         /* Enter starts the next paragraph rather than breaking this one */
         e.preventDefault();
-        const nb = { p: '' };
-        t.body.splice(t.body.indexOf(b) + 1, 0, nb); save();
-        const ne = block(nb); el.after(ne); ne.focus();
+        addParaAfter(b);
       },
       onblur: () => { const s = getSelection(); if (s.rangeCount && el.contains(s.anchorNode)) last = s.getRangeAt(0).cloneRange(); } });
     fill(el, isH ? b.h : b.p);
@@ -1053,33 +1310,392 @@ function templatePage(t, use = false) {
   /* a long name takes a second line rather than being cut off */
   const title = h('textarea', { class: 'mx-doc-title', rows: '1', placeholder: 'Untitled template', 'aria-label': 'Template name',
     oninput: (e) => { t.name = e.target.value.replace(/\n/g, ' '); t.updated = mxNow(); save(); },
-    onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); docBody.firstElementChild?.focus(); } } });
+    onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); docBody.querySelector('[contenteditable]')?.focus(); } } });
   title.value = t.name;
-  const docBody = h('div', { class: 'mx-doc-body' }, ...t.body.filter(b => !use || (b.h ?? b.p).trim()).map(block));
-  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') },
-    use ? h('h1', { class: 'mx-doc-title' }, t.name || 'Untitled template') : title, docBody);
-  /* a blank in the document and its field find each other */
-  sheet.addEventListener('click', (e) => {
-    const c = e.target.closest('.mx-chip');
-    if (c) fieldsEl.querySelector(`input[data-key="${c.dataset.key}"]`)?.focus();
-  });
-  const lit = (key, on) => {
-    for (const el of sheet.querySelectorAll('.mx-chip')) el.classList.toggle('is-lit', on && el.dataset.key === key);
+
+  /* ── a section on the sheet ───────────────────────────────────
+     Its heading, the chevron that folds it away at the right corner, and
+     — under the pointer, while the template is being kept — a delete and
+     an add-a-paragraph-here beside it. */
+  const docBody = h('div', { class: 'mx-doc-body' });
+  const paraEl = (b) => {
+    const el = block(b);
+    if (!editable) return h('div', { class: 'mx-blk', 'data-id': b.id }, el);
+    return h('div', { class: 'mx-blk', 'data-id': b.id }, el,
+      h('button', { class: 'pbv-icon mx-blk-del', type: 'button', 'aria-label': 'Delete paragraph',
+        'data-tip': 'Delete Paragraph', html: PBV_TRASH, onclick: () => deletePara(b) }));
   };
+  const sectionEl = (g) => {
+    const open = !g.head || !secFolded.has(g.head.id);
+    const sec = h('section', { class: 'mx-sec' + (g.head ? '' : ' is-pre'), 'data-id': secId(g) });
+    const body = h('div', { class: 'mx-sec-body' }, ...g.blocks.map(paraEl));
+    if (!g.head) { sec.append(h('div', { class: 'mx-sec-wrap' }, body)); return sec; }
+    sec.append(
+      h('header', { class: 'mx-sec-head' },
+        h('span', { class: 'mx-sec-n' }), block(g.head),
+        h('button', { class: 'pbv-icon mx-sec-fold', type: 'button', html: PB_SVG.chev,
+          onclick: () => foldSection(sec, !sec.classList.contains('is-folded')) }),
+        editable && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-del', type: 'button', 'aria-label': 'Delete section',
+          'data-tip': 'Delete Section', html: PBV_TRASH, onclick: () => deleteSection(groupOf(sec.dataset.id)) }),
+        editable && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-blank', type: 'button', 'aria-label': 'Add a blank',
+          'data-tip': 'Add Blank', html: MX_ADD_BLANK, onclick: () => addField() }),
+        editable && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-add', type: 'button', 'aria-label': 'Add a paragraph to this section',
+          'data-tip': 'Add Paragraph', onclick: () => addParagraph(groupOf(sec.dataset.id)) }, icon('plus', 'ico ico-14'))),
+      h('div', { class: 'mx-sec-wrap' }, body));
+    foldSection(sec, !open, true);
+    return sec;
+  };
+  /* section numbers are read off the page, so they are right after
+     anything is added, removed or moved. Paragraphs are not numbered:
+     an agreement numbers its clauses, not every line under them. */
+  const sheetNumbers = () => {
+    let si = 0;
+    for (const sec of docBody.querySelectorAll('.mx-sec:not(.is-pre)')) {
+      sec.querySelector('.mx-sec-n').textContent = `${++si}.`;
+    }
+  };
+  const paintBody = (flashId) => {
+    const y = docScroll.scrollTop;
+    docBody.replaceChildren(...groups().map(sectionEl));
+    renumber();
+    syncFoldAll();
+    paintChips();
+    if (qIn.value.trim()) filter();
+    docScroll.scrollTop = y;
+    if (flashId) docBody.querySelector(`[data-id="${flashId}"]`)?.classList.add('is-new');
+  };
+  const renumber = () => { sheetNumbers(); paintIdx(); paintCount(); };
+
+  /* ── folding a section away ───────────────────────────────────
+     Kept while the template is open, on the sheet and in the outline
+     separately: what you have put away in one is not put away in the other. */
+  const secFolded = ((MX.templates.fold ||= {})[t.id] ||= new Set());
+  function foldSection(sec, on, quiet) {
+    if (sec.classList.contains('is-pre')) return;
+    const id = sec.dataset.id;
+    if (on) secFolded.add(id); else secFolded.delete(id);
+    sec.classList.toggle('is-folded', on);
+    sec.querySelector('.mx-sec-wrap').inert = on;
+    const btn = sec.querySelector('.mx-sec-fold');
+    btn.setAttribute('aria-expanded', String(!on));
+    btn.dataset.tip = on ? 'Expand Section' : 'Collapse Section';
+    btn.setAttribute('aria-label', btn.dataset.tip);
+    if (quiet) return;
+    /* clipped only while it moves, so nothing is cut off at rest */
+    sec.classList.add('is-folding');
+    setTimeout(() => sec.classList.remove('is-folding'), 300);
+    syncFoldAll();
+  }
+  const openSection = (id) => {
+    const sec = docBody.querySelector(`.mx-sec[data-id="${id}"]`);
+    if (sec?.classList.contains('is-folded')) foldSection(sec, false);
+  };
+  const sheetSecs = () => [...docBody.querySelectorAll('.mx-sec:not(.is-pre)')];
+  const allFolded = () => { const s = sheetSecs(); return s.length > 0 && s.every(x => x.classList.contains('is-folded')); };
+  function syncFoldAll() {
+    const all = allFolded();
+    foldAllBtn.innerHTML = all ? PBV_EXPAND_ALL : PBV_COLLAPSE_ALL;
+    foldAllBtn.dataset.tip = all ? 'Expand All Sections' : 'Collapse All Sections';
+    foldAllBtn.setAttribute('aria-label', foldAllBtn.dataset.tip);
+    foldAllBtn.setAttribute('aria-pressed', String(all));
+    foldAllBtn.disabled = !sheetSecs().length;
+  }
+  function foldAll(on) {
+    const at = docBody.querySelector(`.mx-sec[data-id="${curSec}"]`);
+    for (const sec of sheetSecs()) foldSection(sec, on, true);
+    syncFoldAll();
+    /* the sheet has just changed height under you: stay where you were */
+    setTimeout(() => at?.scrollIntoView({ block: on ? 'center' : 'start', behavior: 'smooth' }), 280);
+  }
+
+  /* ── adding and removing on the sheet ── */
+  function addParaAfter(b) {
+    const nb = { id: pbUid('blk'), p: '' };
+    t.body.splice(t.body.indexOf(b) + 1, 0, nb);
+    t.updated = mxNow(); save();
+    const wrap = paraEl(nb);
+    wrap.classList.add('is-new');
+    const host = docBody.querySelector(`[data-id="${b.id}"]`);
+    if (host?.classList.contains('mx-blk')) host.after(wrap);
+    else if (host) { openSection(host.dataset.id); host.querySelector('.mx-sec-body').prepend(wrap); }
+    else (docBody.lastElementChild?.querySelector('.mx-sec-body') || docBody).append(wrap);
+    renumber();
+    wrap.querySelector('[contenteditable]')?.focus();
+  }
+  /* a new paragraph joins the section you are in, after its last one */
+  function addParagraph(g) {
+    const after = g && (g.blocks.length ? g.blocks[g.blocks.length - 1] : g.head);
+    if (after) return addParaAfter(after);
+    const nb = { id: pbUid('blk'), p: '' };
+    t.body.push(nb); t.updated = mxNow(); save();
+    paintBody(nb.id);
+    focusBlock(nb.id);
+  }
+  function addSection() {
+    const head = { id: pbUid('blk'), h: 'New section' }, body = { id: pbUid('blk'), p: '' };
+    t.body.push(head, body); t.updated = mxNow(); save();
+    paintBody(head.id);
+    focusBlock(head.id, true);
+  }
+  const focusBlock = (id, select) => {
+    const host = docBody.querySelector(`[data-id="${id}"]`);
+    host?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => {
+      const el = host?.querySelector('[contenteditable]');
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      if (select) { const r = new Range(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+    }, 300);
+  };
+  /* a blank whose word is gone from the page goes back to being nothing
+     more than a field: the field itself is kept, so it can be used again */
+  function dropBlocks(gone, label) {
+    const before = t.body.slice();
+    t.body = t.body.filter(b => !gone.includes(b));
+    t.updated = mxNow(); save();
+    pbToast(`Deleted ${label}`, { label: 'Undo', run: () => {
+      t.body = before; t.updated = mxNow(); save(); paintBody(gone[0]?.id); paintProg();
+    } });
+  }
+  function deletePara(b) {
+    const el = docBody.querySelector(`.mx-blk[data-id="${b.id}"]`);
+    dropBlocks([b], `“${paraName(b)}”`);
+    if (el) pbLeave(el, renumber); else paintBody();
+  }
+  /* a section takes its paragraphs with it, so it asks first and names them */
+  function deleteSection(g) {
+    if (!g?.head) return;
+    const si = groups().filter(x => x.head).findIndex(x => x.head.id === g.head.id) + 1;
+    const n = g.blocks.length;
+    pbConfirm({
+      title: `Delete “${secName(g)}”?`,
+      lead: !n ? 'This section will be deleted.'
+        : n === 1 ? 'This section and the paragraph in it will be deleted.'
+        : `This section and the ${n} paragraphs in it will be deleted.`,
+      items: g.blocks.map((b, i) => ({ n: `${si}.${i + 1}`, t: paraName(b) })),
+      action: 'Delete section',
+      run: () => {
+        const sec = docBody.querySelector(`.mx-sec[data-id="${g.head.id}"]`);
+        secFolded.delete(g.head.id);
+        dropBlocks([g.head, ...g.blocks], `“${secName(g)}”${n ? ` and its ${n === 1 ? 'paragraph' : n + ' paragraphs'}` : ''}`);
+        if (sec) pbLeave(sec, renumber); else paintBody();
+      } });
+  }
+
+  /* ── the outline ──────────────────────────────────────────────
+     Every section at the margin with its number, its paragraphs one step
+     in under it — 1, then 1.1, 1.2. The chevron at the end of a row folds
+     it away; its name takes you there. */
+  let held = false;           // a place chosen in the outline holds until you scroll
+  let drag = null, renaming = false;
+  const idxList = h('div', { class: 'pbv-idx-list mx-idx-list' });
+  let idxRaf = 0;
+  const queueIdx = () => { if (!idxRaf) idxRaf = requestAnimationFrame(() => { idxRaf = 0; paintIdx(); }); };
+  function paintIdx() {
+    if (drag || renaming) return;
+    let si = 0;
+    idxList.replaceChildren(...groups().filter(g => g.head).map((g) => {
+      const id = secId(g);
+      si++;
+      const head = h('div', { class: 'pbv-idx-sec', 'data-sec': id },
+        editable && h('span', { class: 'pbv-idx-grip', 'aria-hidden': 'true', 'data-tip': 'Drag to Reorder', html: PBV_GRIP }),
+        h('span', { class: 'pbv-idx-no pbv-idx-sec-no' }, `${si}.`),
+        h('button', { class: 'pbv-idx-sec-t', type: 'button',
+          onclick: () => goSec(id),
+          ondblclick: editable ? () => renameSec(id) : null },
+          h('span', { class: 'pbv-idx-sec-name' }, secName(g))),
+        editable && h('button', { class: 'pbv-idx-ren', type: 'button', 'aria-label': 'Rename ' + secName(g),
+          'data-tip': 'Rename Section', html: PBV_PENCIL, onclick: (e) => { e.stopPropagation(); renameSec(id); } }));
+      return h('div', { class: 'pbv-idx-group' }, head);
+    }));
+    markCurrent();
+    if (hl.q) queueHits();
+  }
+  function goSec(id) {
+    curSec = id; held = true;
+    paintIdx();
+    openSection(id);
+    scrollTo_(docBody.querySelector(`.mx-sec[data-id="${id}"]`));
+  }
+  const scrollTo_ = (el) => {
+    if (!el) return;
+    const top = el.getBoundingClientRect().top - docScroll.getBoundingClientRect().top + docScroll.scrollTop - 72;
+    docScroll.scrollTo({ top, behavior: 'smooth' });
+  };
+  /* Renaming a section where you see it listed: the name becomes a field.
+     Enter or clicking away keeps it, Escape puts the old one back. */
+  function renameSec(id) {
+    const b = blockOf(id);
+    const head = [...idxList.querySelectorAll('.pbv-idx-sec')].find(x => x.dataset.sec === id);
+    const btn = head?.querySelector('.pbv-idx-sec-t');
+    if (!b || !btn) return;
+    const was = b.h;
+    const input = h('input', { class: 'pbv-idx-sec-in', value: plain(was), 'aria-label': 'Section name' });
+    let done = false;
+    const finish = (keep) => {
+      if (done) return;
+      done = true; renaming = false;
+      const next = input.value.trim();
+      if (keep && next && next !== plain(was)) {
+        b.h = next; t.updated = mxNow(); save();
+        const el = docBody.querySelector(`.mx-sec[data-id="${id}"] .mx-doc-h`);
+        if (el) { fill(el, next); paintChips(); }
+      }
+      head.classList.remove('is-renaming');
+      paintIdx();
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();            // Escape here is for the field, not the page
+      if (e.key === 'Enter') finish(true);
+      if (e.key === 'Escape') finish(false);
+    });
+    input.addEventListener('blur', () => finish(true));
+    head.classList.add('is-renaming');
+    btn.replaceWith(input);
+    renaming = true;
+    input.focus(); input.select();
+  }
+
+  /* ── carrying a section to a new place ────────────────────────
+     Pointer-driven rather than the browser's own drag, so the row can
+     follow the hand and the list can open a slot for it as it goes. The
+     order the outline is left in is the order the body takes, and a
+     section brings its paragraphs with it. */
+  const idxNumbers = () => idxList.querySelectorAll('.pbv-idx-group').forEach((g, i) => {
+    g.querySelector('.pbv-idx-sec-no').textContent = `${i + 1}.`;
+  });
+  /* move the slot, and let everything it displaces slide rather than jump */
+  const moveSlot = (place) => {
+    const moved = [...idxList.querySelectorAll('.pbv-idx-sec')];
+    const before = new Map(moved.map(el => [el, el.getBoundingClientRect().top]));
+    place();
+    for (const el of moved) {
+      if (drag.it.contains(el)) continue;
+      const dy = before.get(el) - el.getBoundingClientRect().top;
+      if (!dy) continue;
+      el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }],
+        { duration: 180, easing: 'cubic-bezier(.2,0,0,1)' });
+    }
+    idxNumbers();
+  };
+  const dragStep = (e) => {
+    const { it, ghost } = drag;
+    ghost.style.left = (e.clientX - drag.dx) + 'px';
+    ghost.style.top = (e.clientY - drag.dy) + 'px';
+    drag.y = e.clientY;
+    /* it goes before the first heading the pointer is above */
+    const next = [...idxList.children].filter(g => g !== it).find(g => {
+      const r = g.querySelector('.pbv-idx-sec').getBoundingClientRect();
+      return e.clientY < r.top + r.height / 2;
+    }) || null;
+    if (it.nextElementSibling !== next) moveSlot(() => idxList.insertBefore(it, next));
+  };
+  const dragScroll = () => {
+    if (!drag) return;
+    const r = side.getBoundingClientRect();
+    if (drag.y < r.top + 44) side.scrollTop -= 7;
+    else if (drag.y > r.bottom - 44) side.scrollTop += 7;
+    drag.raf = requestAnimationFrame(dragScroll);
+  };
+  /* the body, read back off the outline: each heading, then the
+     paragraphs that were under it, and whatever opened the document
+     before the first heading still first */
+  const idxOrder = () => {
+    const was = groups();
+    const pre = was.find(g => !g.head);
+    const next = pre ? pre.blocks.slice() : [];
+    for (const g of idxList.querySelectorAll('.pbv-idx-sec')) {
+      const was1 = was.find(x => x.head?.id === g.dataset.sec);
+      if (was1) next.push(was1.head, ...was1.blocks);
+    }
+    return next;
+  };
+  const dragEnd = (cancel) => {
+    const { it, ghost, order } = drag;
+    cancelAnimationFrame(drag.raf);
+    page.classList.remove('is-dragging');
+    const next = cancel ? [] : idxOrder();
+    const changed = !cancel && next.length === t.body.length && next.map(b => b.id).join() !== order;
+    const home = it.querySelector('.pbv-idx-sec').getBoundingClientRect();
+    ghost.classList.add('is-landing');
+    ghost.style.left = home.left + 'px'; ghost.style.top = home.top + 'px';
+    const id = it.querySelector('.pbv-idx-sec').dataset.sec;
+    setTimeout(() => {
+      ghost.remove();
+      drag = null;
+      if (changed) {
+        t.body = next; t.updated = mxNow(); save();
+        paintBody(id);
+        requestAnimationFrame(() => goSec(id));
+      } else paintIdx();
+      spy();
+    }, 200);
+  };
+  idxList.addEventListener('pointerdown', (e) => {
+    if (!editable || e.button !== 0 || drag || renaming) return;
+    if (e.target.closest('.pbv-idx-ren, input')) return;
+    const secHead = e.target.closest('.pbv-idx-sec');
+    if (!secHead) return;
+    const it = secHead.parentElement;
+    const x0 = e.clientX, y0 = e.clientY;
+    const move = (ev) => {
+      if (!drag) {
+        /* a click stays a click until the hand has actually moved */
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
+        const r = secHead.getBoundingClientRect();
+        const ghost = secHead.cloneNode(true);
+        ghost.classList.add('pbv-drag-ghost');
+        ghost.style.width = r.width + 'px'; ghost.style.left = r.left + 'px'; ghost.style.top = r.top + 'px';
+        document.body.append(ghost);
+        drag = { it, ghost, dx: x0 - r.left, dy: y0 - r.top, y: ev.clientY,
+          order: t.body.map(b => b.id).join() };
+        it.classList.add('is-slot');
+        page.classList.add('is-dragging');
+        drag.raf = requestAnimationFrame(dragScroll);
+      }
+      ev.preventDefault();
+      dragStep(ev);
+    };
+    const stop = (cancel) => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', abort);
+      removeEventListener('keydown', key, true);
+      if (drag) {
+        /* the release would otherwise read as a click, and jump */
+        const eat = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+        idxList.addEventListener('click', eat, { capture: true });
+        setTimeout(() => idxList.removeEventListener('click', eat, { capture: true }), 0);
+        dragEnd(cancel);
+      }
+    };
+    const up = () => stop(false);
+    const abort = () => stop(true);
+    const key = (ev) => { if (ev.key === 'Escape' && drag) { ev.stopPropagation(); ev.preventDefault(); stop(true); } };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', abort);
+    addEventListener('keydown', key, true);
+  });
 
   /* ── the fields ── */
   const focusChip = (key) => {
     lit(key, true);
     const first = sheet.querySelector(`.mx-chip[data-key="${key}"]`);
-    if (first) { const r = first.getBoundingClientRect(), box = docScroll.getBoundingClientRect();
-      if (r.top < box.top + 40 || r.bottom > box.bottom - 40) first.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    if (!first) return;
+    openSection(first.closest('.mx-sec')?.dataset.id);
+    const r = first.getBoundingClientRect(), box = docScroll.getBoundingClientRect();
+    if (r.top < box.top + 40 || r.bottom > box.bottom - 40) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  const lit = (key, on) => {
+    for (const el of sheet.querySelectorAll('.mx-chip')) el.classList.toggle('is-lit', on && el.dataset.key === key);
   };
   const fieldRow = (f) => {
     if (use) {
       /* filling: the field's name, and its value */
       const input = h('input', { class: 'mx-f-in', 'data-key': f.key, value: vals[f.key] || '', placeholder: f.hint ? 'e.g. ' + f.hint : '',
         'aria-label': f.label,
-        oninput: (e) => { vals[f.key] = e.target.value; paintChips(f.key, true); paintProg(); },
+        oninput: (e) => { vals[f.key] = e.target.value; paintChips(f.key, true); paintProg(); queueIdx(); },
         onfocus: () => focusChip(f.key), onblur: () => lit(f.key, false) });
       return h('label', { class: 'mx-f' }, h('div', { class: 'mx-f-top' }, h('span', { class: 'mx-f-l' }, f.label || 'Untitled field')), input);
     }
@@ -1089,7 +1705,7 @@ function templatePage(t, use = false) {
       oninput: (e) => { f.hint = e.target.value; t.updated = mxNow(); save(); },
       onfocus: () => focusChip(f.key), onblur: () => lit(f.key, false) });
     const name = h('input', { class: 'mx-f-l', value: f.label, 'aria-label': 'Field name', placeholder: 'Field name',
-      oninput: (e) => { f.label = e.target.value; save(); paintChips(f.key); },
+      oninput: (e) => { f.label = e.target.value; save(); paintChips(f.key); queueIdx(); },
       onfocus: () => focusChip(f.key), onblur: () => lit(f.key, false) });
     return h('div', { class: 'mx-f is-keep' },
       h('div', { class: 'mx-f-top' }, name,
@@ -1098,27 +1714,50 @@ function templatePage(t, use = false) {
             t.fields.splice(t.fields.indexOf(f), 1);
             /* its blanks go back to being plain words */
             for (const el of [...sheet.querySelectorAll(`.mx-chip[data-key="${f.key}"]`)]) {
-              const host = el.closest('[contenteditable]'); el.replaceWith(f.label); host.__b[host.tagName === 'H2' ? 'h' : 'p'] = read(host);
+              /* the chip is contenteditable="false", so it answers closest()
+                 itself — the block it sits in is its parent's */
+              const host = el.parentElement?.closest('.mx-doc-h, .mx-doc-p');
+              el.replaceWith(f.label);
+              if (host?.__b) host.__b[host.tagName === 'H2' ? 'h' : 'p'] = read(host);
             }
-            save(); paintFields(); paintProg();
+            save(); paintFields(); paintProg(); paintIdx();
           } })),
       h('label', { class: 'mx-f-eg' }, h('span', {}, 'e.g.'), hint));
   };
   const fieldsEl = h('div', { class: 'mx-fs' });
   const paintFields = () => fieldsEl.replaceChildren(...t.fields.map(fieldRow));
-  /* a new blank goes where the caret last was in the document */
+  /* A new blank goes where the caret last was. Select words first and it
+     takes their place and their name, which is how one is usually made:
+     the word “Customer” in the sentence becomes the blank Customer. */
+  const blockAt = (node) => (node?.nodeType === 1 ? node : node?.parentElement)?.closest('.mx-doc-h, .mx-doc-p') || null;
   const addField = () => {
-    let n = t.fields.length + 1, key;
-    do { key = 'field_' + n++; } while (t.fields.some(f => f.key === key));
-    const f = { key, label: 'New field', hint: '' };
+    const at = last && sheet.contains(last.startContainer) ? blockAt(last.startContainer) : null;
+    const picked = at && !last.collapsed ? last.toString().replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+    const label = picked || 'New field';
+    let key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'field';
+    if (/^\d/.test(key)) key = 'f_' + key;
+    for (let n = 2, base = key; t.fields.some(f => f.key === key); ) key = base + '_' + n++;
+    const f = { key, label, hint: '' };
     t.fields.push(f);
     const c = chip(key);
-    const host = last && sheet.contains(last.startContainer) ? last.startContainer.parentElement.closest('[contenteditable]') || last.startContainer : null;
-    if (host && last) { last.collapse(false); last.insertNode(c); }
-    else { const p = docBody.querySelector('.mx-doc-p:last-of-type') || docBody.lastElementChild; p.append(' ', c); }
-    const el = c.closest('[contenteditable]'); el.__b[el.tagName === 'H2' ? 'h' : 'p'] = read(el);
-    save(); paintFields(); paintChips(); paintProg();
-    const name = fieldsEl.querySelector('.mx-f:last-child .mx-f-l'); name.focus(); name.select();
+    if (at) {
+      if (last.collapsed) last.collapse(false); else last.deleteContents();
+      last.insertNode(c);
+    } else {
+      /* nowhere in particular: the end of the last paragraph, and if there
+         is not one yet, a paragraph made for it */
+      if (!docBody.querySelector('.mx-doc-p')) addParagraph(groups()[groups().length - 1]);
+      [...docBody.querySelectorAll('.mx-doc-p')].pop()?.append(' ', c);
+    }
+    /* the chip is contenteditable="false" and so answers closest() itself:
+       the block to read back is its parent's, not its own */
+    const el = c.parentElement?.closest('.mx-doc-h, .mx-doc-p');
+    if (el?.__b) el.__b[el.tagName === 'H2' ? 'h' : 'p'] = read(el);
+    last = null;
+    t.updated = mxNow(); save(); paintFields(); paintChips(); paintProg(); paintIdx();
+    const name = fieldsEl.querySelector('.mx-f:last-child .mx-f-l');
+    if (name) { name.focus(); name.select(); }
+    else c.scrollIntoView({ block: 'center', behavior: 'smooth' });
   };
 
   /* values arrive one after another, so you can see where each one went */
@@ -1131,7 +1770,7 @@ function templatePage(t, use = false) {
         vals[fd.key] = val;
         const input = fieldsEl.querySelector(`input.mx-f-in[data-key="${fd.key}"]`);
         if (input) { input.value = val; input.classList.remove('is-hit'); void input.offsetWidth; input.classList.add('is-hit'); }
-        paintChips(fd.key, true); paintProg();
+        paintChips(fd.key, true); paintProg(); queueIdx();
       }, 260 + (n++) * 240);
     }
     return n;
@@ -1182,6 +1821,182 @@ function templatePage(t, use = false) {
     return box;
   }
 
+  /* ── searching the document ───────────────────────────────────
+     No box: the glass, your words after it, and how many matches there
+     are. `/` opens it from anywhere on the sheet, Enter walks the
+     matches, Shift+Enter walks back. Folded sections open while a search
+     is on, so what it found can be read. */
+  const hl = { q: '', marks: [], cur: -1, raf: 0, shown: 0 };
+  /* closing it also puts the glass back where it was: focusing the field
+     scrolls this box, and the scroll outlives the field */
+  const closeFind = () => { qIn.value = ''; filter(); find.classList.remove('is-open'); qIn.blur(); find.scrollLeft = 0; };
+  const qIn = h('input', { type: 'search', placeholder: 'Search the document', 'aria-label': 'Search the document',
+    oninput: () => filter(),
+    onkeydown: (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); closeFind(); }
+      if (e.key === 'Enter') { e.preventDefault(); stepHit(e.shiftKey ? -1 : 1); }
+    },
+    onblur: () => { if (!qIn.value) { find.classList.remove('is-open'); find.scrollLeft = 0; } } });
+  const findCt = h('span', { class: 'pbv-find-ct', 'aria-live': 'polite' });
+  const find = h('div', { class: 'pb-find pbv-find mx-find' },
+    h('button', { class: 'pb-find-btn', type: 'button', 'aria-label': 'Search the document', 'data-tip': 'Search the Document  ( / )',
+      html: PB_SVG.search, onclick: () => { find.classList.add('is-open'); qIn.focus(); } }),
+    qIn, findCt,
+    h('button', { class: 'pbv-find-x', type: 'button', 'aria-label': 'Clear search', 'data-tip': 'Clear Search', html: PBV_X,
+      onmousedown: (e) => e.preventDefault(),        // the field keeps its focus
+      onclick: () => { qIn.value = ''; filter(); qIn.focus(); } }));
+  const nomatch = h('p', { class: 'mx-doc-none', hidden: true }, 'Nothing in this document matches that search.');
+  function filter() {
+    const q = qIn.value.trim().toLowerCase();
+    let shown = 0;
+    for (const sec of docBody.querySelectorAll('.mx-sec')) {
+      /* a section whose name has the words keeps everything under it */
+      const head = blockOf(sec.dataset.id);
+      const secHit = !!q && !!head && plain(head.h).toLowerCase().includes(q);
+      let inSec = 0;
+      for (const el of sec.querySelectorAll('.mx-blk')) {
+        const b = blockOf(el.dataset.id);
+        const hit = !q || secHit || (b && plain(b.p).toLowerCase().includes(q));
+        el.hidden = !hit; inSec += hit ? 1 : 0;
+      }
+      const keep = !q || inSec > 0 || secHit;
+      sec.hidden = !keep;
+      shown += inSec;
+      /* folded things are opened by the search, and closed again after */
+      sec.querySelector('.mx-sec-wrap').inert = !q && sec.classList.contains('is-folded');
+      [...idxList.querySelectorAll('.pbv-idx-sec')].find(s => s.dataset.sec === sec.dataset.id)
+        ?.parentElement.toggleAttribute('hidden', !keep);
+    }
+    nomatch.hidden = !q || shown > 0;
+    find.classList.toggle('has-q', !!q);
+    docBody.classList.toggle('is-searching', !!q);
+    if (hl.q !== q) { hl.q = q; hl.cur = -1; }
+    hl.shown = shown;
+    paintHits();
+  }
+  /* the words are in the document itself, so the browser's own highlight
+     tints them where they stand; the one you are on is tinted apart */
+  const ranges = (root, q) => {
+    const out = [];
+    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (!n.parentElement?.offsetParent) continue;
+      const low = n.data.toLowerCase();
+      let i = 0, at;
+      while ((at = low.indexOf(q, i)) >= 0) {
+        const r = new Range(); r.setStart(n, at); r.setEnd(n, at + q.length);
+        out.push(r); i = at + q.length;
+      }
+    }
+    return out;
+  };
+  function paintHits() {
+    cancelAnimationFrame(hl.raf); hl.raf = 0;
+    CSS.highlights?.delete('mx-find'); CSS.highlights?.delete('mx-find-cur');
+    hl.marks = [];
+    const q = hl.q;
+    if (q && window.Highlight && CSS.highlights) {
+      hl.marks = ranges(docBody, q);
+      const all = hl.marks.concat(ranges(idxList, q));
+      if (all.length) CSS.highlights.set('mx-find', new Highlight(...all));
+      if (hl.cur >= hl.marks.length) hl.cur = -1;
+      if (hl.cur >= 0) CSS.highlights.set('mx-find-cur', new Highlight(hl.marks[hl.cur]));
+    }
+    const n = hl.marks.length;
+    findCt.textContent = !q ? '' : !hl.shown && !n ? 'No matches'
+      : hl.cur >= 0 ? `${hl.cur + 1} of ${n}`
+      : n ? `${n} ${n === 1 ? 'match' : 'matches'}` : `${hl.shown} shown`;
+  }
+  function queueHits() { if (!hl.raf) hl.raf = requestAnimationFrame(paintHits); }
+  function stepHit(d) {
+    if (!hl.marks.length) return;
+    hl.cur = (hl.cur + d + hl.marks.length + (hl.cur < 0 && d < 0 ? 1 : 0)) % hl.marks.length;
+    const el = hl.marks[hl.cur].startContainer.parentElement?.closest('.mx-blk, .mx-sec-head');
+    scrollTo_(el);
+    paintHits();
+  }
+
+  /* ── the bar over the sheet ───────────────────────────────────
+     What the document is and how much of it there is, the search, one
+     control that folds every section away and opens them all again, and
+     the plus that adds a paragraph or a section. */
+  const count = h('span', { class: 'pbv-count' });
+  const paintCount = () => { count.textContent = groups().filter(g => g.head).length; };
+  const foldAllBtn = h('button', { class: 'pbv-add mx-fold-all', type: 'button', onclick: () => foldAll(!allFolded()) });
+  const ctxN = h('span', { class: 'pbv-bar-ctx-n' }), ctxT = h('span', { class: 'pbv-bar-ctx-t' });
+  const ctx = h('button', { class: 'pbv-bar-ctx', type: 'button', tabindex: '-1', 'aria-hidden': 'true',
+    'data-tip': 'Go to Section Start',
+    onclick: () => scrollTo_(docBody.querySelector(`.mx-sec[data-id="${ctx.dataset.sec}"]`)) }, ctxN, ctxT);
+  const showSideBtn = h('button', { class: 'pbv-icon pbv-panel-btn mx-show-side', type: 'button', 'aria-label': 'Show the outline',
+    'data-tip': 'Show Outline', html: PBV_PANEL, onclick: () => showSide(true) });
+  const docBar = h('div', { class: 'mx-doc-bar' },
+    h('span', { class: 'pbv-bar-t' }, 'Sections'), count,
+    h('div', { class: 'pbv-bar-sub' }, ctx),
+    h('span', { class: 'pb-grow' }),
+    find,
+    foldAllBtn,
+    /* one named thing rather than a plus that hides a menu: a section is
+       what you add to a document from up here. A paragraph is added
+       inside the section it belongs to, and a blank in the sentence it
+       is part of — both under the pointer, where they happen. */
+    editable && h('button', { class: 'pbv-add-fb mx-add-sec', type: 'button', onclick: () => addSection() }, 'Add section'));
+
+  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) }, docBar,
+    h('div', { class: 'mx-doc-in' },
+      editable ? title : h('h1', { class: 'mx-doc-title' }, t.name || 'Untitled template'), docBody, nomatch));
+  /* a blank in the document and its field find each other */
+  sheet.addEventListener('click', (e) => {
+    const c = e.target.closest('.mx-chip');
+    if (c) fieldsEl.querySelector(`input[data-key="${c.dataset.key}"]`)?.focus();
+  });
+  const docScroll = h('div', { class: 'mx-tpl-doc' }, sheet);
+
+  /* ── the outline follows the reading ── */
+  let curSec = null;
+  function markCurrent() {
+    for (const x of idxList.querySelectorAll('.pbv-idx-sec')) x.setAttribute('aria-current', String(x.dataset.sec === curSec));
+  }
+  /* which section's heading is out of sight above, while its paragraphs
+     are still on the sheet: its number and name come down in a slim
+     second bar of their own, so you still know where you are */
+  const context = () => {
+    const edge = docBar.getBoundingClientRect().bottom + 30;
+    let at = null;
+    for (const sec of docBody.querySelectorAll('.mx-sec:not(.is-pre)')) {
+      if (sec.hidden) continue;
+      const head = sec.querySelector('.mx-sec-head');
+      if (head.getBoundingClientRect().bottom > edge) break;
+      at = sec.getBoundingClientRect().bottom > edge + 8 ? sec : null;
+    }
+    const id = at?.dataset.id || '';
+    if (id && id !== ctx.dataset.sec) {
+      const swap = ctx.classList.contains('is-on');
+      ctx.dataset.sec = id;
+      ctxN.textContent = at.querySelector('.mx-sec-n')?.textContent || '';
+      ctxT.textContent = at.querySelector('.mx-doc-h')?.textContent.trim() || 'Untitled section';
+      if (swap) { ctx.classList.remove('is-swap'); void ctx.offsetWidth; ctx.classList.add('is-swap'); }
+    }
+    ctx.classList.toggle('is-on', !!id);
+    docBar.classList.toggle('is-stuck', docScroll.scrollTop > 16);
+    ctx.tabIndex = id ? 0 : -1;
+    ctx.setAttribute('aria-hidden', String(!id));
+  };
+  const spy = () => {
+    context();
+    const top = docScroll.getBoundingClientRect().top + 120;
+    let cur = null;
+    for (const el of docBody.querySelectorAll('.mx-blk')) {
+      if (el.hidden || !el.offsetParent) continue;
+      if (!cur || el.getBoundingClientRect().top <= top) cur = el;
+    }
+    if (held) return markCurrent();
+    curSec = cur?.closest('.mx-sec')?.dataset.id || null;
+    markCurrent();
+  };
+  docScroll.addEventListener('scroll', spy, { passive: true });
+  const release = () => { if (held) { held = false; spy(); } };
+  for (const ev of ['wheel', 'touchmove', 'pointerdown']) docScroll.addEventListener(ev, release, { passive: true });
+
   /* ── the draft: the template with what you filled in, as a document in a chat ── */
   const draft = () => {
     const txt = (s) => s.replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => vals[k]?.trim() || `[${mxFieldLabel(t, k)}]`);
@@ -1229,42 +2044,94 @@ function templatePage(t, use = false) {
     queueMicrotask(() => openArtifact(a));
   };
 
-  /* ── Open in Word: the template as it stands, filled where it is filled, as a file Word opens ── */
-  const toWord = () => {
-    const esc = (x) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const txt = (x) => esc(x).replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => esc(vals[k]?.trim() || `[${mxFieldLabel(t, k)}]`));
-    const body = t.body.filter(b => (b.h ?? b.p).trim()).map(b => b.h !== undefined ? `<h2>${txt(b.h)}</h2>` : `<p>${txt(b.p)}</p>`).join('');
-    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8">`
-      + `<title>${esc(t.name || 'Untitled template')}</title><style>body{font-family:Georgia,serif;font-size:12pt;line-height:1.5}`
-      + `h1{font-size:20pt;font-weight:normal;margin:0 0 18pt}h2{font-size:12pt;margin:18pt 0 6pt}p{margin:0 0 10pt}</style></head>`
-      + `<body><h1>${esc(t.name || 'Untitled template')}</h1>${body}</body></html>`;
-    const a = h('a', { href: URL.createObjectURL(new Blob(['\ufeff' + html], { type: 'application/msword' })),
-      download: `${(t.name || 'Untitled template').replace(/[\\/:*?"<>|]+/g, ' ').trim()}.doc` });
-    document.body.append(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    pbToast(`“${t.name || 'Untitled template'}” is downloading for Word`);
-  };
-
-  const docScroll = h('div', { class: 'mx-tpl-doc' }, sheet);
+  /* ── the panel beside the document ────────────────────────────
+     The outline and the fields. It closes to nothing, and keeps its own
+     width inside, so it slides out whole instead of being squeezed. */
   /* a draft started from a request goes back to that request */
   const from = use && MX.templates.from?.tpl === t.id ? MX.templates.from : null;
-  const back = use
-    ? h('button', { class: 'mx-back', type: 'button', onclick: () => from ? (MX.templates.open = null, mxOpen('intake', from.id)) : mxOpen('templates', t.id) },
-        h('span', { class: 'mx-back-ar', html: PB_SVG.chev }), from ? from.id : t.name || 'Untitled template')
-    : h('button', { class: 'mx-back', type: 'button', onclick: () => { mxClose('templates'); go('templates'); } },
-        h('span', { class: 'mx-back-ar', html: PB_SVG.chev }), 'Templates');
-  const word = h('button', { class: 'btn mx-word', type: 'button', onclick: toWord },
-    h('img', { src: 'assets/brand/word.svg', alt: '', 'aria-hidden': 'true' }), 'Open in Word');
-  const page = h('div', { class: 'mx-tpl' + (use ? ' is-use' : '') },
-    h('aside', { class: 'mx-tpl-side' }, back,
-      use ? fillAsk() : null,
-      h('div', { class: 'mx-tpl-side-head' },
-        h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, use ? 'Fill in' : 'Fields'), prog)),
-      fieldsEl,
-      use ? null : h('div', { class: 'mx-tpl-links' },
-        h('button', { class: 'pbv-add-fb', type: 'button', onclick: addField }, 'Add Field'))),
+  const back = shell ? null
+    : use
+      ? h('button', { class: 'mx-back', type: 'button', onclick: () => from ? (MX.templates.open = null, mxOpen('intake', from.id)) : mxOpen('templates', t.id) },
+          h('span', { class: 'mx-back-ar', html: PB_SVG.chev }), from ? from.id : t.name || 'Untitled template')
+      : h('button', { class: 'mx-back', type: 'button', onclick: () => { mxClose('templates'); go('templates'); } },
+          h('span', { class: 'mx-back-ar', html: PB_SVG.chev }), 'Templates');
+  const hideBtn = h('button', { class: 'pbv-icon', type: 'button', 'aria-label': 'Hide the outline',
+    'data-tip': 'Hide Outline', html: PBV_PANEL, onclick: () => showSide(false) });
+  const outlineBlock = h('div', { class: 'mx-tpl-out' },
+    h('div', { class: 'mx-tpl-side-head' },
+      h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, 'Sections')),
+      h('span', { class: 'pb-grow' }), hideBtn),
+    idxList);
+  const fieldsBlock = h('div', { class: 'mx-tpl-fields' },
+    h('div', { class: 'mx-tpl-side-head' },
+      h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, 'Fill in'), prog)),
+    fieldsEl);
+  /* Filling one in, the blanks are the work, so they are listed first and
+     the outline sits under them. Keeping the template, they are not listed
+     at all: a blank belongs in the sentence it is part of, and the panel is
+     the document's shape. A new one is added from the plus over the sheet. */
+  const side = h('aside', { class: 'mx-tpl-side' }, back,
+    use ? fillAsk() : null,
+    ...(use ? [fieldsBlock, outlineBlock] : [outlineBlock]));
+
+  /* beside a conversation there is far less room, so the panel starts
+     narrower there and the document keeps the rest */
+  const SIDE_W = inChat ? { min: 190, max: 380, base: 230 } : { min: 240, max: 480, base: 320 };
+  const setSideW = (w) => {
+    const v = Math.round(Math.max(SIDE_W.min, Math.min(SIDE_W.max, w)));
+    page.style.setProperty('--mx-side-w', v + 'px');
+    resize.setAttribute('aria-valuenow', String(v));
+    return v;
+  };
+  /* the panel's right edge is a handle: a hairline that thickens under
+     the pointer, wide enough to catch, and gone when the panel is */
+  const resize = h('div', { class: 'mx-resize', role: 'separator', tabindex: '0',
+    'aria-orientation': 'vertical', 'aria-label': 'Resize the outline',
+    'aria-valuemin': String(SIDE_W.min), 'aria-valuemax': String(SIDE_W.max),
+    title: 'Drag to resize · double-click to reset',
+    ondblclick: () => { const w = setSideW(SIDE_W.base); if (!inChat) { state.mxSideW = w; save(); } },
+    onkeydown: (e) => {
+      const step = e.key === 'ArrowLeft' ? -16 : e.key === 'ArrowRight' ? 16 : 0;
+      if (!step) return;
+      e.preventDefault();
+      const w = setSideW(side.getBoundingClientRect().width + step);
+      if (!inChat) { state.mxSideW = w; save(); }
+    },
+    onpointerdown: (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const x0 = e.clientX, w0 = side.getBoundingClientRect().width;
+      let w = w0;
+      page.classList.add('is-resizing');
+      const move = (ev) => { w = setSideW(w0 + ev.clientX - x0); };
+      const up = () => {
+        removeEventListener('pointermove', move);
+        removeEventListener('pointerup', up);
+        removeEventListener('pointercancel', up);
+        page.classList.remove('is-resizing');
+        if (!inChat) { state.mxSideW = w; save(); }
+      };
+      addEventListener('pointermove', move);
+      addEventListener('pointerup', up);
+      addEventListener('pointercancel', up);
+    } });
+  const sideHidden = () => inChat ? MX.templates.chatSideHidden : MX.templates.sideHidden;
+  function showSide(on) {
+    if (inChat) MX.templates.chatSideHidden = !on; else MX.templates.sideHidden = !on;
+    side.inert = !on;
+    page.classList.toggle('is-side-hidden', !on);
+  }
+
+  const page = h('div', { class: 'mx-tpl' + (use ? ' is-use' : '') + (shell ? ' is-shell' : '')
+      + (inChat ? ' is-in-chat' : '') + (sideHidden() ? ' is-side-hidden' : '') },
+    h('div', { class: 'mx-tpl-side-wrap' }, side),
     h('div', { class: 'mx-tpl-main' },
-      h('div', { class: 'mx-tpl-bar' },
+      /* Docked beside its conversation nothing stands over the document
+         at all — the shell's own header says what this is and whether it
+         is published, and the way back to the outline floats at the
+         corner of the view, as the playbook's does. */
+      shell ? null : h('div', { class: 'mx-tpl-bar' },
+        showSideBtn,
         use
           ? h('span', { class: 'mx-tpl-kind' }, h('span', { class: 'mx-tpl-new' }, `New ${t.name || 'document'}`),
               h('span', { class: 'mx-dot' }, 'from the template'))
@@ -1274,15 +2141,437 @@ function templatePage(t, use = false) {
         h('span', { class: 'pb-grow' }),
         !use && t.status === 'draft' ? h('button', { class: 'btn', type: 'button',
           onclick: () => { t.status = 'live'; t.updated = mxNow(); save(); go('templates'); pbToast(`“${t.name || 'Untitled template'}” is published`); } }, 'Publish') : null,
-        word,
         use
           ? h('button', { class: 'btn btn--primary', type: 'button', onclick: draft }, 'Create Draft')
-          : h('button', { class: 'btn btn--primary', type: 'button', onclick: () => mxOpen('templates', t.id + '/use') }, 'Use Template')),
-      docScroll));
-  paintFields(); paintChips(); paintProg();
+          : null),
+      docScroll),
+    shell ? showSideBtn : null,
+    resize);
+  side.inert = sideHidden();
+  setSideW(inChat ? SIDE_W.base : (state.mxSideW || SIDE_W.base));
+
+  /* `/` anywhere on the page (but not while typing) starts a search */
+  const slash = (e) => {
+    if (!page.isConnected) return removeEventListener('keydown', slash);
+    if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.closest?.('input, textarea, [contenteditable]') || document.querySelector('.pb-dim')) return;
+    if (!page.offsetParent) return;
+    e.preventDefault();
+    find.classList.add('is-open'); qIn.focus();
+  };
+  addEventListener('keydown', slash);
+
+  paintBody(); paintFields(); paintChips(); paintProg();
+  requestAnimationFrame(spy);
   if (!t.name && !use) setTimeout(() => title.focus({ preventScroll: true }), 80);
   return page;
 }
+
+/* a blank, as it reads in the document: a word on a dotted rule */
+const MX_ADD_BLANK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" '
+  + 'stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11"/>'
+  + '<path d="M2.5 11.8h11" stroke-dasharray="1.8 1.6"/><path d="M4.6 8.6h4.2"/></svg>';
+
+/* ══ A template as an artifact, and the conversation about it ══════
+   The same shape a playbook has. What Clavia drafts does not land you on
+   a page on your own: it opens in a conversation with the template
+   itself beside it, so the first thing you do with a new template is
+   read it and say what to change. (playbook-view.js does this for
+   playbooks; this is the same thing for templates.) */
+
+/* ── a template's past ────────────────────────────────────────
+   Every change in the conversation is a new version, and the one before
+   it stays. The same shape a playbook keeps (pbEnsureVersions, pbBump in
+   playbook-view.js): a snapshot per version, and the live template is
+   whatever the newest one says. */
+const mxTplSnap = (t) => ({ id: t.id, name: t.name, set: t.set ? { ...t.set } : undefined,
+  body: structuredClone(t.body), fields: structuredClone(t.fields) });
+
+/* the shipped templates arrive with a past: each version before this one
+   had fewer sections, the way a template actually grows */
+const MX_TPL_HISTORY = ['First draft', 'Added the missing sections', 'Tightened the wording',
+  'Updated after the last round', 'Section review'];
+function mxTplEnsureVersions(t) {
+  for (const b of t.body) b.id ||= pbUid('blk');
+  if (Array.isArray(t.versions) && t.versions.length) return t;
+  /* how many it is on: what it says, or what the shipped list says, the
+     same two places mxTplVer reads */
+  const V = Math.max(1, t.version || MX_TPL_VER[t.id] || 1);
+  const end = new Date(t.updated);
+  t.versions = [];
+  for (let k = 1; k <= V; k++) {
+    const snap = mxTplSnap(t);
+    if (k < V) {
+      /* an earlier version is this one with its last sections not yet
+         written — the opening and what follows it, cut short */
+      const heads = snap.body.map((b, i) => (b.h !== undefined ? i : -1)).filter(i => i >= 0);
+      const keep = heads[Math.max(0, heads.length - (V - k))];
+      if (keep != null) snap.body = snap.body.slice(0, keep);
+    }
+    const when = new Date(end.getTime() - (V - k) * 17 * 864e5);
+    t.versions.push({
+      name: MX_TPL_HISTORY[Math.min(k - 1, MX_TPL_HISTORY.length - 1)],
+      when: pbWhen(when.toISOString()),
+      by: k % 2 ? t.owner : 'Assistant',
+      snap,
+    });
+  }
+  t.version = V;
+  return t;
+}
+
+/* A new version: the change is made to the live template, and the
+   version records what it now is. */
+function mxTplBump(t, meta, change) {
+  mxTplEnsureVersions(t);
+  change?.(t);
+  t.updated = mxNow();
+  t.versions.push({ when: 'Just now', by: 'Assistant', ...meta, snap: mxTplSnap(t) });
+  t.version = t.versions.length;
+  save();
+  const a = mxTplArtifact(t);
+  a.vi = t.versions.length - 1;
+  return t.versions.length;
+}
+
+/* Restore is the artifact system's: it adds a copy of an older version as
+   the newest. The template follows it the next time it is drawn. */
+function mxTplFollowRestore(t) {
+  const last = t.versions?.[t.versions.length - 1];
+  if (!last || t.version === t.versions.length) return;
+  const snap = structuredClone(last.snap);
+  t.name = snap.name; t.body = snap.body; t.fields = snap.fields;
+  if (snap.set) t.set = snap.set;
+  last.snap = mxTplSnap(t);
+  t.version = t.versions.length;
+  t.updated = mxNow(); save();
+}
+
+const MX_TPL_SES = {};
+const mxTplArtId = (t) => 'template-' + t.id;
+
+function mxTplArtifact(t) {
+  const id = mxTplArtId(t);
+  let a = ARTIFACTS[id];
+  if (!a) {
+    a = ARTIFACTS[id] = {
+      id, kind: 'template', tplId: t.id, ext: 'template',
+      /* the name in the header is the template's own name, so renaming it
+         in either place renames it in both */
+      get name() { return mxTemplate(this.tplId)?.name || 'Untitled template'; },
+      set name(v) { const x = mxTemplate(this.tplId); if (x) { x.name = v; x.updated = mxNow(); save(); } },
+      session: () => mxTplSession(mxTemplate(a.tplId)),
+      onPublish: (btn, repaint) => mxTplPublishPop(mxTemplate(a.tplId), btn, repaint),
+      pubInfo: () => mxTplPubInfo(mxTemplate(a.tplId)),
+      onDelete: () => {
+        const x = mxTemplate(a.tplId), d = mxData();
+        closeArtifact?.();
+        if (!x) return;
+        d.templates.splice(d.templates.indexOf(x), 1); save();
+        delete ARTIFACTS[id]; delete MX_TPL_SES['tpl-ses-' + x.id];
+        go('templates');
+        pbToast(`Deleted “${x.name || 'Untitled template'}”`);
+      },
+    };
+  }
+  /* the menu on the name lists these, and an older one read instead of
+     the live template when a.vi says so */
+  mxTplEnsureVersions(t);
+  a.versions = t.versions;
+  if (a.vi != null && a.vi >= t.versions.length) a.vi = null;
+  return a;
+}
+/* an address that names the artifact is a link somebody followed, and a
+   link lands on the thing itself, full screen */
+function mxTplArtifactById(id) {
+  const m = /^template-(.+)$/.exec(id);
+  const t = m && mxTemplate(m[1]);
+  if (!t) return null;
+  MX.templates.full = true;
+  return mxTplArtifact(t);
+}
+
+/* published, a template is the one drafts are made from */
+function mxTplPubInfo(t) {
+  if (!t) return { state: 'off', label: 'Publish', title: '' };
+  return t.status === 'live'
+    ? { state: 'live', label: 'Published', title: `v${mxTplVer(t)} is the version drafts are made from` }
+    : { state: 'off', label: 'Publish', title: 'Publish this template so drafts can be made from it' };
+}
+
+function mxTplPublishPop(t, anchor, repaint) {
+  if (!t) return;
+  if (openMenu && openMenu.dataset.for === 'mx-tpl-pub') return closeMenu();
+  closeMenu();
+  const v = 'v' + mxTplVer(t);
+  const live = t.status === 'live';
+  const el = h('div', { class: 'menu pb-pub', role: 'dialog', 'data-for': 'mx-tpl-pub', 'aria-label': 'Publish' },
+    h('div', { class: 'pb-pub-t' }, live ? `${v} is published` : `Publish ${v}`),
+    h('p', { class: 'pb-pub-p' }, live
+      ? 'Every new draft is made from this version. Change it here and publish again when it is ready.'
+      : `Drafts are made from ${v} as soon as it is published. Until then it is yours alone.`),
+    h('div', { class: 'pb-pub-acts' },
+      live
+        ? h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => {
+            closeMenu(); t.status = 'draft'; t.updated = mxNow(); save();
+            repaint(); pbToast('Unpublished. No new drafts will be made from it.');
+          } }, 'Unpublish')
+        : h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => closeMenu() }, 'Cancel'),
+      live ? null : h('button', { class: 'btn btn--primary', type: 'button', onclick: () => {
+        closeMenu(); t.status = 'live'; t.updated = mxNow(); save();
+        repaint(); pbToast(`${v} is published.`);
+      } }, `Publish ${v}`)));
+  document.body.append(el);
+  openMenu = el;
+  const r = anchor.getBoundingClientRect();
+  el.style.top = (r.bottom + 8) + 'px';
+  el.style.left = Math.max(12, Math.min(r.right - el.offsetWidth, innerWidth - el.offsetWidth - 12)) + 'px';
+  el.classList.add('opening');
+  el.addEventListener('click', e => e.stopPropagation());
+}
+
+/* how many sections there are, counted the way the page counts them */
+const mxTplSecs = (t) => t.body.filter(b => b.h !== undefined && b.h.trim()).length;
+const mxTplSummary = (t) => `${t.name || 'This template'} — ${mxPlural(mxTplSecs(t), 'section')}, `
+  + `with ${mxPlural(t.fields.length, 'blank')} to fill.`;
+
+/* what a template of this kind usually has and this one does not */
+const MX_TPL_WANTED = [
+  [/governing law|jurisdiction/i, 'Governing law'],
+  [/confidential/i, 'Confidentiality'],
+  [/terminat/i, 'Termination'],
+  [/liabilit/i, 'Limitation of liability'],
+  [/notice/i, 'Notices'],
+];
+function mxTplSuggest(t) {
+  const hay = t.body.map(b => b.h ?? b.p).join(' ');
+  const out = [];
+  const want = MX_TPL_WANTED.find(([re]) => !re.test(hay));
+  if (want) out.push(`Add a section on ${want[1]}`);
+  const sec = t.body.find(b => b.h !== undefined && b.h.trim());
+  if (sec) out.push(`Make ${sec.h.trim()} shorter and plainer`);
+  out.push(t.fields.some(f => /(^|_)date$/.test(f.key))
+    ? 'Give every blank an example value'
+    : 'Add a blank for the effective date');
+  return out.slice(0, 3);
+}
+
+/* the conversation a new template arrives in: what was read, what was
+   made, and that it is a draft until you say otherwise */
+function mxTplBuiltIntro(t, text, files, asked = []) {
+  return [
+    { role: 'user', text: text || `Make a template from ${files.join(', ')}.`,
+      files: files.length ? files.map(name => ({ name })) : null },
+    { role: 'bot', cites: null,
+      answer: `Drafted ${t.name || 'the template'} — ${mxPlural(mxTplSecs(t), 'section')}, `
+        + `with ${mxPlural(t.fields.length, 'blank')} named and ready to fill, `
+        + `set as ${mxSetSays(t)}.\n\n`
+        + (asked.length
+          ? `You asked for ${asked.join(' and ')}, which I cannot set from here — what is above `
+            + 'is the nearest I have. Say it again in the box and I will do what I can.\n\n'
+          : '')
+        + 'It is a draft: read it before you publish it. Tell me what to add, cut or word '
+        + 'differently, and I will change it as a new version.',
+      steps: [
+        files.length
+          ? { source: 'internal', query: `Read ${files.length === 1 ? 'the file you gave it' : 'the files you gave it'}`,
+              rows: files.map(name => ({ title: name, meta: 'reference' })) }
+          : { source: 'think', query: 'Read what the document is for' },
+        { source: 'template', query: `Drafted ${mxPlural(mxTplSecs(t), 'section')}`, count: 'v' + mxTplVer(t) },
+      ],
+      suggest: mxTplSuggest(t) },
+  ];
+}
+
+/* ── working on a template in its conversation ────────────────
+   Once the first draft exists the conversation is where it changes. Two
+   asks are carried out against a document handed over in the box — set
+   it the way that one is set, and bring a section across from it — and
+   a third is read from the words alone: set it as something else. No
+   model behind this, so what cannot be worked out is said rather than
+   faked, and whatever is done is said exactly. */
+
+/* a clause asked for by name, found in the templates we already have.
+   Asked for by one name and headed by another — confidentiality against
+   Confidential Information — so the words are cut to their stems before
+   they are compared, and the short ones dropped. */
+const mxStems = (x) => x.toLowerCase().replace(/[^a-z]+/g, ' ').split(' ')
+  .filter(w => w.length > 3).map(w => w.slice(0, 6));
+function mxTplFindSection(name) {
+  const want = mxStems(name);
+  if (!want.length) return null;
+  for (const seed of MX_SEED.templates) {
+    const at = seed.body.findIndex(b => b.h !== undefined && mxStems(b.h).some(w => want.includes(w)));
+    if (at < 0) continue;
+    const out = [{ h: seed.body[at].h }];
+    for (let i = at + 1; i < seed.body.length && seed.body[i].h === undefined; i++) out.push({ p: seed.body[i].p });
+    return { from: seed.name, blocks: out };
+  }
+  return null;
+}
+
+const MX_TURN_SET = /\b(reformat|re-?format|format(?:ting|ted)?|set(?: it)?|lay(?: it)? out|style)\b/i;
+const MX_TURN_LIKE = /\b(like|as|to match|match(?:ing)?|same as|after)\b/i;
+
+function mxTplAsk(t, prompt, files) {
+  const q = prompt.trim();
+  const file = files[0]?.name || null;
+
+  /* "reformat like this" — the handed-over document decides how it is set */
+  if (file && MX_TURN_SET.test(q) && (MX_TURN_LIKE.test(q) || /\bthis\b/i.test(q))) {
+    const n = file.toLowerCase();
+    const layout = /letter|notice|memo/.test(n) ? 'letter' : 'legal';
+    const page = /\b(us|letter|usa|american)\b/.test(n) ? 'letter' : 'a4';
+    const face = /calibri/.test(n) ? 'calibri' : /arial|helvetica/.test(n) ? 'arial' : 'times';
+    const set = { layout, page, face, size: mxSet(t, 'size') };
+    return { name: `Set the way ${file} is set`,
+      run: () => { t.set = set; },
+      say: () => `Set the same way as ${file}: ${mxSetSays(t)}.\n\n`
+        + 'If that is not how it reads to you, say which part is wrong and I will change it.' };
+  }
+
+  /* "include this clause from this doc" — a section brought across */
+  const want = /(?:include|add|bring|pull|take|copy)\s+(?:in\s+)?(?:the\s+)?(.+?)\s*(?:clause|section|provision)\b/i.exec(q);
+  if (want) {
+    const name = want[1].replace(/\b(from|in|of|this|that|the|a|an|doc|document|file)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+    const found = mxTplFindSection(name);
+    const title = (found ? found.blocks[0].h : name.replace(/\b\w/g, c => c.toUpperCase())) || 'New section';
+    return { name: found ? `Added ${title}${file ? `, from ${file}` : ''}` : `Added ${title}, to be written`,
+      run: () => {
+        const blocks = (found ? found.blocks : [{ h: title }, { p: '' }]).map(b => ({ ...b, id: pbUid('blk') }));
+        t.body.push(...blocks);
+      },
+      say: () => found
+        ? `Added ${title}${file ? `, from ${file}` : ''} — the wording is the one we already use, so read it before you publish.`
+        : `Added ${title}${file ? `, from ${file}` : ''} as an empty section. I could not pull its wording across, `
+          + 'so it is yours to write — or paste it in and I will tidy it.' };
+  }
+
+  /* "make it a plain letter" — read from the words alone */
+  for (const k of MX_SET_KEYS) {
+    const opt = MX_SET[k].options.find(o => new RegExp('\\b' + o.label.toLowerCase().replace(/[^a-z0-9 ]/g, '.') + '\\b', 'i').test(q));
+    if (opt && opt.key !== mxSet(t, k)) {
+      return { name: `Set the ${MX_SET[k].label.toLowerCase()} to ${opt.label}`,
+        run: () => { t.set = { ...Object.fromEntries(MX_SET_KEYS.map(x => [x, mxSet(t, x)])), [k]: opt.key }; },
+        say: () => `Set as ${mxSetSays(t)}.` };
+    }
+  }
+  return null;
+}
+
+function templateTurn(a, prompt, files = []) {
+  const t = mxTemplate(a.tplId);
+  if (!t) return;
+  const spec = mxTplAsk(t, prompt, files);
+  const m = { role: 'bot', steps: [], text: '', thinking: true };
+  thread.messages.push(m);
+  paintThread();
+
+  const step = files.length
+    ? { source: 'internal', query: `Read ${files.map(f => f.name).join(', ')}`,
+        rows: files.map(f => ({ title: f.name, meta: 'handed over' })) }
+    : { source: 'template', query: 'Read the request against the document' };
+  setTimeout(() => { m.steps.push({ ...step, rows: step.rows || [], running: true }); renderBot(m); }, 320);
+  setTimeout(() => { Object.assign(m.steps[0], step, { running: false }); renderBot(m); }, 1200);
+  setTimeout(() => {
+    m.thinking = false;
+    m.cites = null;
+    if (m.traceOpen == null) m.traceOpen = false;
+    if (!spec) {
+      m.text = files.length
+        ? `I have ${files.map(f => f.name).join(' and ')}. Tell me what to do with it — set this the way that `
+          + 'one is set, or name a section to bring across — and I will do it as a new version.'
+        : 'I could not tell what to change. Name a section to add, or say how it should be set — '
+          + 'numbered clauses, headed sections or a plain letter, and the paper and typeface if they matter.';
+      m.suggest = mxTplSuggest(t);
+      renderBot(m);
+      return;
+    }
+    const n = mxTplBump(t, { name: spec.name }, () => spec.run());
+    m.steps.push({ source: 'template', query: spec.name, count: 'v' + n });
+    m.text = spec.say();
+    m.artifact = a.id;
+    renderBot(m);
+    if (document.getElementById('main')?.dataset.artifact === 'open') openArtifact(a);
+  }, 1700);
+}
+
+function mxTplSession(t, intro) {
+  if (!t) return null;
+  const id = 'tpl-ses-' + t.id;
+  if (MX_TPL_SES[id] && !intro) return MX_TPL_SES[id];
+  const a = mxTplArtifact(t);
+  MX_TPL_SES[id] = {
+    id, artifact: a.id, label: t.name || 'Untitled template', meta: 'now',
+    people: [{ name: USER.name, online: true, owner: true }],
+    messages: intro || [
+      { role: 'user', text: `Let's work on the ${t.name || 'untitled'} template.` },
+      { role: 'bot', answer: mxTplSummary(t), cites: null,
+        steps: [{ source: 'template', query: 'Read ' + (t.name || 'the template'),
+          count: mxPlural(t.fields.length, 'blank') }],
+        suggest: mxTplSuggest(t) },
+    ],
+  };
+  return MX_TPL_SES[id];
+}
+/* a template's conversation is made when it is first opened, so a link to
+   it makes it again */
+function mxTplSessionRoute(id) {
+  const m = /^tpl-ses-(.+)$/.exec(id);
+  const t = m && mxTemplate(m[1]);
+  if (!t) return false;
+  mxTplEditInChat(t);
+  return true;
+}
+/* hold = the document is not shown yet: the conversation has a question
+   to ask first, and the answer decides how the document is set */
+function mxTplEditInChat(t, intro, hold) {
+  MX.templates.open = null;
+  MX.templates.full = false;
+  openSession(mxTplSession(t, intro));
+  if (!hold) queueMicrotask(() => openArtifact(mxTplArtifact(t)));
+}
+
+/* Read it: the document full screen, with the shell's own header over it
+   — the way pbView opens a playbook. The template has no page of its
+   own any more, because the thing itself is the page. */
+function mxTplView(t) {
+  MX.templates.full = true;
+  if (state.view !== 'templates' || MX.templates.open) { mxClose('templates'); go('templates'); }
+  openArtifact(mxTplArtifact(t), { full: true });
+  setArtifactHash(mxTplArtifact(t));
+}
+
+/* ── registering the kind ─────────────────────────────────────── */
+RENDER.template = (a) => {
+  const t = mxTemplate(a.tplId);
+  if (!t) return { body: h('div', { class: 'pbv-gone' }, 'This template has been deleted.') };
+  mxTplEnsureVersions(t);
+  mxTplFollowRestore(t);
+  /* the newest version is the template itself; an older one is the
+     record it left, and reads only */
+  const latest = isCurrentVersion(a);
+  return {
+    body: templatePage(latest ? t : versionOf(a).snap, false, true, !latest),
+    /* opened from the list, the way out is back to it; beside a chat, the
+       template keeps its mark and the panel's own close */
+    lead: [state.view === 'templates'
+      ? h('button', { class: 'pbv-back', type: 'button', 'aria-label': 'Back to Templates', 'data-tip': 'Back to Templates',
+          html: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" '
+            + 'stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>',
+          onclick: () => { closeArtifact?.(); if (state.view !== 'templates') go('templates'); } })
+      : h('span', { class: 'pbv-kind', 'aria-hidden': 'true', html: kindMark('template') })],
+  };
+};
+/* A template, drawn as it is in the Templates list: a sheet of paper with
+   a blank ruled into it. */
+KIND_ICON.template =
+    '<rect x="4.6" y="1.9" width="14.8" height="20.2" rx="2.6" fill="#FCFCFB" stroke="#D8D3CC" stroke-width="1"/>'
+  + '<path d="M7.8 7.1h8.4M7.8 13.3h8.4" stroke="#DDD8D1" stroke-width="1" stroke-linecap="round"/>'
+  + '<path d="M7.8 10.2h4.4" stroke="#B9AF9C" stroke-width="1" stroke-linecap="round" stroke-dasharray="1.6 1.4"/>';
+KIND_LABEL.template = 'Template';
+KIND_SHORT.template = 'TEMPLATE';
+NOUN.template = 'template';
 
 /* what the trace says it read, for the steps these modules add */
 SOURCES.template = { label: 'the template', verb: 'Used',
