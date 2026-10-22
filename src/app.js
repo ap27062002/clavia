@@ -4116,35 +4116,70 @@ const faceEl = (name, cls = '', attrs = {}) => h('span', Object.assign({
    Some things cannot be guessed from the ask — how a document is set,
    what size paper it is for — and guessing wastes the work. The answer
    stops and asks, in a card over the box you would have answered in,
-   not as another message in the thread. Every question at once, each a
-   row of choices; the work goes on when they are all answered. */
+   not as another message in the thread.
+
+   One question at a time, the way it is asked out loud. Every question
+   can be skipped, and every question will take an answer that is not on
+   the list: nobody should have to pick the nearest wrong thing. */
 let askHost = null, askSpec = null;
 function chatAsk(spec) {
-  askSpec = spec ? { ...spec, answers: { ...(spec.answers || {}) } } : null;
+  askSpec = spec ? { ...spec, at: 0, answers: {}, typing: false } : null;
   paintAsk();
 }
 function paintAsk() {
   if (!askHost) return;
   askHost.dataset.on = String(!!askSpec);
   if (!askSpec) return askHost.replaceChildren();
-  const { title, questions, action = 'Use these', onDone } = askSpec;
-  const done = () => questions.every(q => askSpec.answers[q.key]);
-  const go = h('button', { class: 'cask-go btn btn--primary', type: 'button', disabled: !done(),
-    onclick: () => { const a = askSpec.answers, f = onDone; chatAsk(null); f?.(a); } }, action);
-  const paint = () => {
-    askHost.replaceChildren(
-      h('div', { class: 'cask' },
-        title ? h('div', { class: 'cask-t' }, title) : null,
-        ...questions.map(q => h('div', { class: 'cask-q' },
-          h('div', { class: 'cask-l' }, q.label),
-          h('div', { class: 'cask-opts' }, ...q.options.map(o => h('button', {
-            class: 'cask-opt' + (askSpec.answers[q.key] === o.key ? ' is-on' : ''),
-            type: 'button', 'aria-pressed': String(askSpec.answers[q.key] === o.key),
-            'data-tip': o.desc || null,
-            onclick: () => { askSpec.answers[q.key] = o.key; paint(); } }, o.label))))),
-        h('div', { class: 'cask-foot' }, go)));
+  const { questions, onDone } = askSpec;
+  const q = questions[askSpec.at];
+  if (!q) { const a = askSpec.answers; chatAsk(null); onDone?.(a); return; }
+
+  const take = (answer) => {
+    askSpec.answers[q.key] = answer;
+    askSpec.at++; askSpec.typing = false;
+    paintAsk();
   };
-  paint();
+  /* skipping is an answer too: it says take whatever you would have */
+  const skip = h('button', { class: 'cask-skip', type: 'button',
+    onclick: () => take({ key: q.def, skipped: true }) }, 'Skip');
+  const back = askSpec.at > 0 ? h('button', { class: 'cask-back', type: 'button', 'aria-label': 'Back',
+    onclick: () => { askSpec.at--; askSpec.typing = false; paintAsk(); },
+    html: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" '
+      + 'stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>' }) : null;
+
+  /* the answer that is not on the list: the option becomes a field */
+  const other = () => {
+    const input = h('input', { class: 'cask-in', type: 'text', 'aria-label': q.question,
+      placeholder: 'Say what you want instead…',
+      onkeydown: (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); send(); }
+        if (e.key === 'Escape') { e.stopPropagation(); askSpec.typing = false; paintAsk(); }
+      },
+      oninput: () => { go.disabled = !input.value.trim(); } });
+    const send = () => { const v = input.value.trim(); if (v) take({ key: q.def, text: v }); };
+    const go = h('button', { class: 'cask-send', type: 'button', disabled: true, 'aria-label': 'Send', onclick: send,
+      html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" '
+        + 'stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 12l6-6 6 6"/></svg>' });
+    queueMicrotask(() => input.focus());
+    return h('div', { class: 'cask-other' }, input, go);
+  };
+
+  askHost.replaceChildren(h('div', { class: 'cask' },
+    h('div', { class: 'cask-top' }, back,
+      h('span', { class: 'cask-chip' }, q.header),
+      h('span', { class: 'pb-grow' }),
+      h('span', { class: 'cask-n' }, `${askSpec.at + 1} of ${questions.length}`),
+      skip),
+    h('div', { class: 'cask-q' }, q.question),
+    askSpec.typing ? other()
+      : h('div', { class: 'cask-opts' },
+          ...q.options.map(o => h('button', { class: 'cask-opt', type: 'button', onclick: () => take({ key: o.key }) },
+            h('span', { class: 'cask-l' }, o.label),
+            o.desc ? h('span', { class: 'cask-d' }, o.desc) : null)),
+          h('button', { class: 'cask-opt cask-opt--other', type: 'button',
+            onclick: () => { askSpec.typing = true; paintAsk(); } },
+            h('span', { class: 'cask-l' }, 'Something else'),
+            h('span', { class: 'cask-d' }, 'Say it in your own words and I will do what I can.')))));
 }
 
 let repHost = null;

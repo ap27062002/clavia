@@ -969,14 +969,19 @@ function buildTemplate(text, files, step) {
    way, the draft is described, and the document opens beside it */
 function mxTplAskSet(t, text, files) {
   queueMicrotask(() => chatAsk({
-    title: 'How should the document be set?',
-    action: 'Draft it',
-    answers: Object.fromEntries(MX_SET_KEYS.map(k => [k, MX_SET[k].def])),
-    questions: MX_SET_KEYS.map(k => ({ key: k, label: MX_SET[k].label, options: MX_SET[k].options })),
-    onDone: (set) => {
-      t.set = set; t.updated = mxNow(); save();
-      say('user', mxSetSays(t));
-      for (const m of mxTplBuiltIntro(t, text, files).slice(1)) say('bot', m.answer, { ...m, text: m.answer, thinking: false });
+    questions: MX_SET_KEYS.map(k => ({
+      key: k, header: MX_SET[k].label, question: MX_SET[k].ask,
+      options: MX_SET[k].options, def: MX_SET[k].def,
+    })),
+    onDone: (answers) => {
+      t.set = Object.fromEntries(MX_SET_KEYS.map(k => [k, answers[k]?.key || MX_SET[k].def]));
+      t.updated = mxNow(); save();
+      /* what was asked for in words that are not on the list is kept and
+         said back, because the document cannot be set to it */
+      const asked = MX_SET_KEYS.filter(k => answers[k]?.text)
+        .map(k => `${MX_SET[k].label.toLowerCase()}: “${answers[k].text}”`);
+      say('user', asked.length ? asked.join('; ') : mxSetSays(t));
+      for (const m of mxTplBuiltIntro(t, text, files, asked).slice(1)) say('bot', m.answer, { ...m, text: m.answer, thinking: false });
       paintThread();
       queueMicrotask(() => openArtifact(mxTplArtifact(t)));
     },
@@ -985,9 +990,9 @@ function mxTplAskSet(t, text, files) {
     { role: 'user', text: text || `Make a template from ${files.join(', ')}.`,
       files: files.length ? files.map(name => ({ name })) : null },
     { role: 'bot', cites: null, artifact: null,
-      answer: `I have the sections for ${t.name || 'the template'}. Tell me how it should be set `
-        + 'and I will write it that way — it is the difference between something you read here '
-        + 'and something you can send.',
+      answer: `I have the sections for ${t.name || 'the template'}. A few things about how it `
+        + 'should be set and I will write it that way — it is the difference between something '
+        + 'you read here and something you can send.',
       steps: [
         files.length
           ? { source: 'internal', query: `Read ${files.length === 1 ? 'the file you gave it' : 'the files you gave it'}`,
@@ -1004,28 +1009,28 @@ function mxTplAskSet(t, text, files) {
    predates the question and takes the defaults. */
 const MX_SET = {
   layout: {
-    label: 'Layout', def: 'headed',
+    label: 'Layout', def: 'headed', ask: 'How should the document be laid out?',
     options: [
       { key: 'legal', label: 'Numbered clauses', desc: 'Title centred in caps, sections numbered, text justified. How an agreement is set.' },
       { key: 'headed', label: 'Headed sections', desc: 'A heading over each section, text ranged left.' },
       { key: 'letter', label: 'Plain letter', desc: 'No headings — one paragraph after another, as a notice is written.' },
     ] },
   page: {
-    label: 'Paper', def: 'a4',
+    label: 'Paper', def: 'a4', ask: 'What paper is it for?',
     options: [
       { key: 'a4', label: 'A4', desc: '210 × 297mm. The rest of the world.' },
       { key: 'letter', label: 'US Letter', desc: '8.5 × 11in. North America.' },
       { key: 'a3', label: 'A3', desc: '297 × 420mm. For schedules that will not fit.' },
     ] },
   face: {
-    label: 'Typeface', def: 'times',
+    label: 'Typeface', def: 'times', ask: 'What should it be set in?',
     options: [
       { key: 'times', label: 'Times New Roman', desc: 'What most agreements are still set in.' },
       { key: 'arial', label: 'Arial', desc: 'Plainer, and what a lot of in-house paper uses.' },
       { key: 'calibri', label: 'Calibri', desc: "Word's own default since 2007." },
     ] },
   size: {
-    label: 'Size', def: '11',
+    label: 'Size', def: '11', ask: 'How big should the text be?',
     options: [{ key: '10', label: '10 pt' }, { key: '11', label: '11 pt' }, { key: '12', label: '12 pt' }],
   },
 };
@@ -2201,7 +2206,7 @@ function mxTplSuggest(t) {
 
 /* the conversation a new template arrives in: what was read, what was
    made, and that it is a draft until you say otherwise */
-function mxTplBuiltIntro(t, text, files) {
+function mxTplBuiltIntro(t, text, files, asked = []) {
   return [
     { role: 'user', text: text || `Make a template from ${files.join(', ')}.`,
       files: files.length ? files.map(name => ({ name })) : null },
@@ -2209,6 +2214,10 @@ function mxTplBuiltIntro(t, text, files) {
       answer: `Drafted ${t.name || 'the template'} — ${mxPlural(mxTplSecs(t), 'section')}, `
         + `with ${mxPlural(t.fields.length, 'blank')} named and ready to fill, `
         + `set as ${mxSetSays(t)}.\n\n`
+        + (asked.length
+          ? `You asked for ${asked.join(' and ')}, which I cannot set from here — what is above `
+            + 'is the nearest I have. Say it again in the box and I will do what I can.\n\n'
+          : '')
         + 'It is a draft: read it before you publish it. Tell me what to add, cut or word '
         + 'differently, and I will change it as a new version.',
       steps: [
