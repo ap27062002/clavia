@@ -1286,10 +1286,12 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      template itself and is typed into wherever it is open. */
   const editable = !use && !frozen;
   /* In the shell the document is either the whole screen or docked
-     beside a conversation. Full, it is read as a page and the outline is
-     open; docked, the document takes the width and the outline is one
-     click away. */
-  const full = shell && !!MX.templates.full;
+     beside a conversation — and which it is, is simply whether there is
+     a conversation showing. Read rather than remembered: the shell's own
+     Edit with Chat opens one without going through anything of ours, and
+     a flag set in one place and not the other is how a panel ends up
+     beside a chat that has no room for it. */
+  const full = shell && state.view !== 'thread';
   const inChat = shell && !full;
   const vals = use ? (MX.templates.values[t.id] ||= {}) : {};
   const filled = () => t.fields.filter(f => vals[f.key]?.trim()).length;
@@ -2323,14 +2325,10 @@ function mxTplArtifact(t) {
   if (a.vi != null && a.vi >= t.versions.length) a.vi = null;
   return a;
 }
-/* an address that names the artifact is a link somebody followed, and a
-   link lands on the thing itself, full screen */
 function mxTplArtifactById(id) {
   const m = /^template-(.+)$/.exec(id);
   const t = m && mxTemplate(m[1]);
-  if (!t) return null;
-  MX.templates.full = true;
-  return mxTplArtifact(t);
+  return t ? mxTplArtifact(t) : null;
 }
 
 /* Published, a template is the one drafts are made from — but only the
@@ -2583,7 +2581,6 @@ function mxTplSessionRoute(id) {
    to ask first, and the answer decides how the document is set */
 function mxTplEditInChat(t, intro, hold) {
   MX.templates.open = null;
-  MX.templates.full = false;
   openSession(mxTplSession(t, intro));
   if (!hold) queueMicrotask(() => openArtifact(mxTplArtifact(t)));
 }
@@ -2592,7 +2589,6 @@ function mxTplEditInChat(t, intro, hold) {
    — the way pbView opens a playbook. The template has no page of its
    own any more, because the thing itself is the page. */
 function mxTplView(t) {
-  MX.templates.full = true;
   if (state.view !== 'templates' || MX.templates.open) { mxClose('templates'); go('templates'); }
   openArtifact(mxTplArtifact(t), { full: true });
   setArtifactHash(mxTplArtifact(t));
