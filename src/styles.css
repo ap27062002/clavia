@@ -6688,25 +6688,35 @@ body[data-bare] .br-pane { display: none; }
 .cx-g { width: 15px; height: 15px; display: block; }
 
 /* ── where to go next, under an answer ── */
-/* ── a question the answer stopped to ask ──
-   A quiet card, not a dialog: it sits in the thread where the answer
-   would have been. Each choice says what it is and what it means. */
-.msg-ask { margin-top: 18px; max-width: 560px; }
-.msg-ask-q { font-size: 14px; color: var(--text); padding: 0 0 10px; }
-.msg-ask-opt {
-  appearance: none; cursor: pointer; font: inherit; text-align: left;
-  display: block; width: 100%; padding: 10px 13px; margin: 0 0 6px;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 11px;
-  transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+/* ── what the answer stopped to ask ──
+   A card over the box, not a message in the thread: it is the thing in
+   front of you until it is answered. Every question at once, each a row
+   of choices, and one button when they are all made. */
+.cask-dock { display: none; }
+.cask-dock[data-on="true"] { display: block; margin: 0 0 10px; }
+.cask {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  padding: 14px 16px 12px;
+  box-shadow: 0 1px 2px rgba(20,20,19,.03), 0 10px 28px -22px rgba(20,20,19,.3);
+  animation: caskIn 260ms var(--ease-out);
 }
-.msg-ask-opt:hover, .msg-ask-opt:focus-visible { border-color: var(--line-strong); background: var(--tint); }
-.msg-ask-l { display: block; font-size: 13.5px; font-weight: 550; color: var(--text); }
-.msg-ask-d { display: block; margin-top: 2px; font-size: 12.5px; line-height: 1.5; color: var(--text-soft); }
-/* answered, it keeps the question and what you said, and nothing else */
-.msg-ask.is-answered .msg-ask-q { color: var(--text-soft); padding-bottom: 6px; }
-.msg-ask-said { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; color: var(--text); }
-.msg-ask-tick { width: 15px; height: 15px; flex: none; color: var(--pos-preferred, #2E7D52); }
-.msg-ask-tick svg { width: 15px; height: 15px; display: block; }
+@keyframes caskIn { from { opacity: 0; transform: translateY(6px); } }
+.cask-t { font-size: 13.5px; font-weight: 550; color: var(--text); padding: 0 0 10px; }
+.cask-q + .cask-q { margin-top: 10px; }
+.cask-l { font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); padding: 0 0 6px; }
+.cask-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.cask-opt {
+  appearance: none; cursor: pointer; font: inherit; font-size: 13px;
+  padding: 6px 12px; border-radius: 999px;
+  background: none; color: var(--text-soft);
+  border: 1px solid var(--line);
+  transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.cask-opt:hover { border-color: var(--line-strong); color: var(--text); background: var(--tint); }
+.cask-opt.is-on { background: var(--rail-bg); border-color: var(--rail-bg); color: #fff; }
+.cask-foot { display: flex; justify-content: flex-end; margin-top: 12px; }
+.cask-go { padding: 7px 15px; font-size: 13px; }
+.cask-go:disabled { opacity: .45; pointer-events: none; }
 
 .sugg { margin-top: 22px; }
 .sugg-h { font-size: 13px; font-weight: 500; color: var(--text); padding: 0 0 6px; }

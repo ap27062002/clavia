@@ -23,12 +23,11 @@
 
 const MX = {
   vault:     { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, files: {} },
-  /* fold: sections folded on the sheet, outline: sections folded in the
-     outline beside it, sideHidden: the whole panel put away on the page,
-     chatSideHidden: the same beside a conversation, where there is less
-     room and the document has it to start with */
+  /* fold: sections folded on the sheet, sideHidden: the panel put away
+     on the page, chatSideHidden: the same beside a conversation, where
+     there is less room and the document has it to start with */
   templates: { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, values: {},
-               fold: {}, outline: {}, sideHidden: false, chatSideHidden: true },
+               fold: {}, sideHidden: false, chatSideHidden: true },
   requests:  { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } } },
   projects:  { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, items: {} },
   agents:    { open: null },   // 'new', 'build', 'build/done', or an agent's id
@@ -960,52 +959,88 @@ function buildTemplate(text, files, step) {
     setTimeout(() => {
       if (state.view !== 'templates' || MX.templates.open !== 'new') return;   // left while it was writing
       const t = newTemplate(templateFrom(from, text ? null : files[0]), true, false);
-      mxTplEditInChat(t, mxTplAskFormat(t, text, files), true);
+      mxTplEditInChat(t, mxTplAskSet(t, text, files), true);
     }, 800);
   };
   tick();
 }
 
-/* the one question, and what answering it does: the template is set that
+/* the questions, and what answering them does: the template is set that
    way, the draft is described, and the document opens beside it */
-function mxTplAskFormat(t, text, files) {
+function mxTplAskSet(t, text, files) {
+  queueMicrotask(() => chatAsk({
+    title: 'How should the document be set?',
+    action: 'Draft it',
+    answers: Object.fromEntries(MX_SET_KEYS.map(k => [k, MX_SET[k].def])),
+    questions: MX_SET_KEYS.map(k => ({ key: k, label: MX_SET[k].label, options: MX_SET[k].options })),
+    onDone: (set) => {
+      t.set = set; t.updated = mxNow(); save();
+      say('user', mxSetSays(t));
+      for (const m of mxTplBuiltIntro(t, text, files).slice(1)) say('bot', m.answer, { ...m, text: m.answer, thinking: false });
+      paintThread();
+      queueMicrotask(() => openArtifact(mxTplArtifact(t)));
+    },
+  }));
   return [
     { role: 'user', text: text || `Make a template from ${files.join(', ')}.`,
       files: files.length ? files.map(name => ({ name })) : null },
     { role: 'bot', cites: null, artifact: null,
-      answer: `I have the sections for ${t.name || 'the template'}. One thing before I set it down.`,
+      answer: `I have the sections for ${t.name || 'the template'}. Tell me how it should be set `
+        + 'and I will write it that way — it is the difference between something you read here '
+        + 'and something you can send.',
       steps: [
         files.length
           ? { source: 'internal', query: `Read ${files.length === 1 ? 'the file you gave it' : 'the files you gave it'}`,
               rows: files.map(name => ({ title: name, meta: 'reference' })) }
           : { source: 'think', query: 'Read what the document is for' },
-      ],
-      choice: {
-        question: 'How should the document be set?',
-        options: MX_FORMATS.map(f => ({ key: f.key, label: f.name, desc: f.desc })),
-        onPick: (key, opt) => {
-          t.format = key; t.updated = mxNow(); save();
-          say('user', opt.label);
-          for (const m of mxTplBuiltIntro(t, text, files).slice(1)) say('bot', m.answer, { ...m, text: m.answer, thinking: false });
-          paintThread();
-          queueMicrotask(() => openArtifact(mxTplArtifact(t)));
-        },
-      } },
+      ] },
   ];
 }
 
-/* How a document is laid out. A template keeps the one it was drafted
-   in; everything shipped predates the question, so it is headed. */
-const MX_FORMATS = [
-  { key: 'legal', name: 'Numbered clauses',
-    desc: 'The title centred in caps, clauses numbered 1 then 1.1 down the page, the text justified. How an agreement is usually set.' },
-  { key: 'headed', name: 'Headed sections',
-    desc: 'A heading over each section and the text ranged left. Easier to read on screen than to sign.' },
-  { key: 'letter', name: 'Plain letter',
-    desc: 'No headings and no numbers — one paragraph after another, the way a notice or a cover letter is written.' },
-];
-const mxFormat = (t) => MX_FORMATS.find(f => f.key === t.format) ? t.format : 'headed';
-const mxFormatName = (t) => MX_FORMATS.find(f => f.key === mxFormat(t)).name;
+/* ── How a document is set ────────────────────────────────────
+   Three things decide whether what is on screen is the document that
+   comes out of Word: how it is laid out, what paper it is for, and what
+   it is set in. A template keeps all of them; everything shipped
+   predates the question and takes the defaults. */
+const MX_SET = {
+  layout: {
+    label: 'Layout', def: 'headed',
+    options: [
+      { key: 'legal', label: 'Numbered clauses', desc: 'Title centred in caps, sections numbered, text justified. How an agreement is set.' },
+      { key: 'headed', label: 'Headed sections', desc: 'A heading over each section, text ranged left.' },
+      { key: 'letter', label: 'Plain letter', desc: 'No headings — one paragraph after another, as a notice is written.' },
+    ] },
+  page: {
+    label: 'Paper', def: 'a4',
+    options: [
+      { key: 'a4', label: 'A4', desc: '210 × 297mm. The rest of the world.' },
+      { key: 'letter', label: 'US Letter', desc: '8.5 × 11in. North America.' },
+      { key: 'a3', label: 'A3', desc: '297 × 420mm. For schedules that will not fit.' },
+    ] },
+  face: {
+    label: 'Typeface', def: 'times',
+    options: [
+      { key: 'times', label: 'Times New Roman', desc: 'What most agreements are still set in.' },
+      { key: 'arial', label: 'Arial', desc: 'Plainer, and what a lot of in-house paper uses.' },
+      { key: 'calibri', label: 'Calibri', desc: "Word's own default since 2007." },
+    ] },
+  size: {
+    label: 'Size', def: '11',
+    options: [{ key: '10', label: '10 pt' }, { key: '11', label: '11 pt' }, { key: '12', label: '12 pt' }],
+  },
+};
+const MX_SET_KEYS = Object.keys(MX_SET);
+/* what a template is set as, falling back to the default for anything it
+   does not say */
+const mxSet = (t, k) => {
+  const g = MX_SET[k];
+  return g.options.some(o => o.key === t?.set?.[k]) ? t.set[k] : g.def;
+};
+const mxSetLabel = (t, k) => MX_SET[k].options.find(o => o.key === mxSet(t, k)).label;
+const mxSetClasses = (t) => MX_SET_KEYS.map(k => ` is-${k}-${mxSet(t, k)}`).join('');
+/* how it reads in a sentence: "numbered clauses on A4, Times New Roman 11 pt" */
+const mxSetSays = (t) => `${mxSetLabel(t, 'layout').toLowerCase()} on ${mxSetLabel(t, 'page')}, `
+  + `${mxSetLabel(t, 'face')} ${mxSetLabel(t, 'size')}`;
 
 const mxFieldLabel = (t, key) => t.fields.find(f => f.key === key)?.label || key;
 
@@ -1165,8 +1200,7 @@ function templatePage(t, use = false, inChat = false) {
   const paraEl = (b) => {
     const el = block(b);
     if (use) return h('div', { class: 'mx-blk', 'data-id': b.id }, el);
-    return h('div', { class: 'mx-blk', 'data-id': b.id },
-      h('span', { class: 'mx-blk-n' }), el,
+    return h('div', { class: 'mx-blk', 'data-id': b.id }, el,
       h('button', { class: 'pbv-icon mx-blk-del', type: 'button', 'aria-label': 'Delete paragraph',
         'data-tip': 'Delete Paragraph', html: PBV_TRASH, onclick: () => deletePara(b) }));
   };
@@ -1188,17 +1222,13 @@ function templatePage(t, use = false, inChat = false) {
     foldSection(sec, !open, true);
     return sec;
   };
-  /* numbers are read off the page, so they are right after anything is
-     added, removed or moved. The opening has no number, and neither do
-     the paragraphs in it. */
+  /* section numbers are read off the page, so they are right after
+     anything is added, removed or moved. Paragraphs are not numbered:
+     an agreement numbers its clauses, not every line under them. */
   const sheetNumbers = () => {
     let si = 0;
-    for (const sec of docBody.querySelectorAll('.mx-sec')) {
-      const pre = sec.classList.contains('is-pre');
-      if (!pre) si++;
-      const n = sec.querySelector('.mx-sec-n');
-      if (n) n.textContent = `${si}.`;
-      sec.querySelectorAll('.mx-blk-n').forEach((el, ci) => { el.textContent = pre ? '' : `${si}.${ci + 1}`; });
+    for (const sec of docBody.querySelectorAll('.mx-sec:not(.is-pre)')) {
+      sec.querySelector('.mx-sec-n').textContent = `${++si}.`;
     }
   };
   const paintBody = (flashId) => {
@@ -1323,7 +1353,7 @@ function templatePage(t, use = false, inChat = false) {
       action: 'Delete section',
       run: () => {
         const sec = docBody.querySelector(`.mx-sec[data-id="${g.head.id}"]`);
-        secFolded.delete(g.head.id); outFolded.delete(g.head.id);
+        secFolded.delete(g.head.id);
         dropBlocks([g.head, ...g.blocks], `“${secName(g)}”${n ? ` and its ${n === 1 ? 'paragraph' : n + ' paragraphs'}` : ''}`);
         if (sec) pbLeave(sec, renumber); else paintBody();
       } });
@@ -1333,86 +1363,36 @@ function templatePage(t, use = false, inChat = false) {
      Every section at the margin with its number, its paragraphs one step
      in under it — 1, then 1.1, 1.2. The chevron at the end of a row folds
      it away; its name takes you there. */
-  const outFolded = ((MX.templates.outline ||= {})[t.id] ||= new Set());
-  let searching = false;      // a search shows every section that has a match
   let held = false;           // a place chosen in the outline holds until you scroll
   let drag = null, renaming = false;
-  let wasOpen = null;
-  const outOpen = (id) => searching || !outFolded.has(id);
   const idxList = h('div', { class: 'pbv-idx-list mx-idx-list' });
   let idxRaf = 0;
   const queueIdx = () => { if (!idxRaf) idxRaf = requestAnimationFrame(() => { idxRaf = 0; paintIdx(); }); };
   function paintIdx() {
     if (drag || renaming) return;
-    const nowOpen = new Set();
     let si = 0;
-    idxList.replaceChildren(...groups().map((g) => {
-      const id = secId(g), pre = !g.head;
-      if (!pre) si++;
-      const open = pre || outOpen(id);
-      if (open) nowOpen.add(id);
-      const head = h('div', { class: 'pbv-idx-sec' + (pre ? ' is-pre' : ''), 'data-sec': id, 'data-open': String(open) },
-        !use && !pre && h('span', { class: 'pbv-idx-grip', 'aria-hidden': 'true', 'data-tip': 'Drag to Reorder', html: PBV_GRIP }),
-        h('span', { class: 'pbv-idx-no pbv-idx-sec-no' }, pre ? '' : `${si}.`),
+    idxList.replaceChildren(...groups().filter(g => g.head).map((g) => {
+      const id = secId(g);
+      si++;
+      const head = h('div', { class: 'pbv-idx-sec', 'data-sec': id },
+        !use && h('span', { class: 'pbv-idx-grip', 'aria-hidden': 'true', 'data-tip': 'Drag to Reorder', html: PBV_GRIP }),
+        h('span', { class: 'pbv-idx-no pbv-idx-sec-no' }, `${si}.`),
         h('button', { class: 'pbv-idx-sec-t', type: 'button',
           onclick: () => goSec(id),
-          ondblclick: !use && !pre ? () => renameSec(id) : null },
+          ondblclick: use ? null : () => renameSec(id) },
           h('span', { class: 'pbv-idx-sec-name' }, secName(g))),
-        !use && !pre && h('button', { class: 'pbv-idx-ren', type: 'button', 'aria-label': 'Rename ' + secName(g),
-          'data-tip': 'Rename Section', html: PBV_PENCIL, onclick: (e) => { e.stopPropagation(); renameSec(id); } }),
-        !pre && h('button', { class: 'pbv-idx-fold', type: 'button', 'aria-expanded': String(open),
-          'aria-label': (open ? 'Collapse ' : 'Expand ') + secName(g), html: PB_SVG.chev,
-          'data-tip': open ? 'Collapse Section' : 'Expand Section',
-          onclick: (e) => { e.stopPropagation(); toggleSec(id); } }));
-      const items = h('div', { class: 'pbv-idx-items' + (open && wasOpen && !wasOpen.has(id) ? ' is-opening' : ''), hidden: !open },
-        ...g.blocks.map((b, ci) => h('button', { class: 'pbv-idx-it', type: 'button', 'data-id': b.id,
-          onclick: () => jump(b.id) },
-          !use && h('span', { class: 'pbv-idx-grip', 'aria-hidden': 'true', 'data-tip': 'Drag to Reorder', html: PBV_GRIP }),
-          h('span', { class: 'pbv-idx-no' }, pre ? `${ci + 1}` : `${si}.${ci + 1}`),
-          h('span', { class: 'pbv-idx-t' }, paraName(b)))));
-      return h('div', { class: 'pbv-idx-group', 'data-pre': pre ? 'y' : null }, head, items);
+        !use && h('button', { class: 'pbv-idx-ren', type: 'button', 'aria-label': 'Rename ' + secName(g),
+          'data-tip': 'Rename Section', html: PBV_PENCIL, onclick: (e) => { e.stopPropagation(); renameSec(id); } }));
+      return h('div', { class: 'pbv-idx-group' }, head);
     }));
-    wasOpen = nowOpen;
     markCurrent();
-    syncIdxFold();
     if (hl.q) queueHits();
   }
-  /* one control folds the outline to its section names, and opens it again */
-  const idxAllFolded = () => {
-    const g = groups().filter(x => x.head);
-    return g.length > 0 && g.every(x => outFolded.has(x.head.id));
-  };
-  const idxFoldBtn = h('button', { class: 'pbv-icon', type: 'button', onclick: () => {
-    const all = idxAllFolded();
-    outFolded.clear();
-    if (!all) for (const g of groups()) if (g.head) outFolded.add(g.head.id);
-    wasOpen = all ? new Set() : wasOpen;      // opening them all: each one arrives
-    paintIdx();
-  } });
-  function syncIdxFold() {
-    const all = idxAllFolded();
-    idxFoldBtn.innerHTML = all ? PBV_EXPAND_ALL : PBV_COLLAPSE_ALL;
-    idxFoldBtn.dataset.tip = all ? 'Show All Paragraphs' : 'Show Sections Only';
-    idxFoldBtn.setAttribute('aria-label', idxFoldBtn.dataset.tip);
-    idxFoldBtn.setAttribute('aria-pressed', String(all));
-  }
-  function toggleSec(id) {
-    if (!outFolded.delete(id)) outFolded.add(id);
-    paintIdx();
-  }
   function goSec(id) {
-    outFolded.delete(id); curSec = id; held = true;
+    curSec = id; held = true;
     paintIdx();
     openSection(id);
     scrollTo_(docBody.querySelector(`.mx-sec[data-id="${id}"]`));
-  }
-  function jump(id) {
-    const el = docBody.querySelector(`.mx-blk[data-id="${id}"]`);
-    if (!el) return;
-    openSection(el.closest('.mx-sec')?.dataset.id);
-    curId = id; held = true; markCurrent();
-    scrollTo_(el);
-    el.classList.remove('is-at'); void el.offsetWidth; el.classList.add('is-at');
   }
   const scrollTo_ = (el) => {
     if (!el) return;
@@ -1453,26 +1433,21 @@ function templatePage(t, use = false, inChat = false) {
     input.focus(); input.select();
   }
 
-  /* ── carrying a section or a paragraph to a new place ─────────
+  /* ── carrying a section to a new place ────────────────────────
      Pointer-driven rather than the browser's own drag, so the row can
-     follow the hand and the list can open a slot for it as it goes. What
-     the outline shows when it is put down is the new order of the body. */
-  const idxNumbers = () => {
-    let si = 0;
-    idxList.querySelectorAll('.pbv-idx-group').forEach((g) => {
-      const pre = g.dataset.pre;
-      if (!pre) si++;
-      g.querySelector('.pbv-idx-sec-no').textContent = pre ? '' : `${si}.`;
-      g.querySelectorAll('.pbv-idx-it .pbv-idx-no').forEach((n, ci) => { n.textContent = pre ? `${ci + 1}` : `${si}.${ci + 1}`; });
-    });
-  };
+     follow the hand and the list can open a slot for it as it goes. The
+     order the outline is left in is the order the body takes, and a
+     section brings its paragraphs with it. */
+  const idxNumbers = () => idxList.querySelectorAll('.pbv-idx-group').forEach((g, i) => {
+    g.querySelector('.pbv-idx-sec-no').textContent = `${i + 1}.`;
+  });
   /* move the slot, and let everything it displaces slide rather than jump */
   const moveSlot = (place) => {
-    const moved = [...idxList.querySelectorAll('.pbv-idx-it, .pbv-idx-sec')];
+    const moved = [...idxList.querySelectorAll('.pbv-idx-sec')];
     const before = new Map(moved.map(el => [el, el.getBoundingClientRect().top]));
     place();
     for (const el of moved) {
-      if (el === drag.it || drag.it.contains(el)) continue;
+      if (drag.it.contains(el)) continue;
       const dy = before.get(el) - el.getBoundingClientRect().top;
       if (!dy) continue;
       el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }],
@@ -1485,47 +1460,12 @@ function templatePage(t, use = false, inChat = false) {
     ghost.style.left = (e.clientX - drag.dx) + 'px';
     ghost.style.top = (e.clientY - drag.dy) + 'px';
     drag.y = e.clientY;
-    /* a whole section: it goes before the first heading the pointer is above,
-       and never above the opening, which has no heading of its own */
-    if (drag.sec) {
-      const next = [...idxList.children].filter(g => g !== it && !g.dataset.pre).find(g => {
-        const r = g.querySelector('.pbv-idx-sec').getBoundingClientRect();
-        return e.clientY < r.top + r.height / 2;
-      }) || null;
-      if (it.nextElementSibling !== next) moveSlot(() => idxList.insertBefore(it, next));
-      return;
-    }
-    /* what the pointer is over decides where the slot goes */
-    const stops = [...idxList.querySelectorAll('.pbv-idx-it:not(.is-slot), .pbv-idx-sec')]
-      .filter(el => el.offsetParent !== null);
-    const next = stops.find(el => { const r = el.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; });
-    let box, ref = null;
-    if (next?.classList.contains('pbv-idx-it')) { box = next.parentElement; ref = next; }
-    else {
-      /* above a section's heading means the end of the section before it;
-         past the last row means the end of the last section */
-      const group = next ? next.parentElement.previousElementSibling : idxList.lastElementChild;
-      box = (group || next.parentElement).querySelector('.pbv-idx-items');
-      if (!group) ref = box.firstElementChild === it ? it.nextElementSibling : box.firstElementChild;
-    }
-    for (const s of idxList.querySelectorAll('.pbv-idx-sec.is-drop')) s.classList.remove('is-drop');
-    /* a closed section cannot show the slot, so its heading lights instead —
-       and, held there a moment, it springs open to take the paragraph */
-    if (box.hidden) {
-      const head = box.previousElementSibling;
-      head.classList.add('is-drop');
-      if (drag.spring?.box !== box) {
-        clearTimeout(drag.spring?.t);
-        drag.spring = { box, t: setTimeout(() => {
-          if (!drag) return;
-          box.hidden = false; box.classList.add('is-opening');
-          head.dataset.open = 'true'; head.classList.remove('is-drop');
-        }, 450) };
-      }
-    } else { clearTimeout(drag.spring?.t); drag.spring = null; }
-    if (it.parentElement === box && it.nextElementSibling === ref) return;
-    if (ref === it) return;
-    moveSlot(() => box.insertBefore(it, ref));
+    /* it goes before the first heading the pointer is above */
+    const next = [...idxList.children].filter(g => g !== it).find(g => {
+      const r = g.querySelector('.pbv-idx-sec').getBoundingClientRect();
+      return e.clientY < r.top + r.height / 2;
+    }) || null;
+    if (it.nextElementSibling !== next) moveSlot(() => idxList.insertBefore(it, next));
   };
   const dragScroll = () => {
     if (!drag) return;
@@ -1534,67 +1474,59 @@ function templatePage(t, use = false, inChat = false) {
     else if (drag.y > r.bottom - 44) side.scrollTop += 7;
     drag.raf = requestAnimationFrame(dragScroll);
   };
-  /* the order the outline is left in is the order the body takes */
+  /* the body, read back off the outline: each heading, then the
+     paragraphs that were under it, and whatever opened the document
+     before the first heading still first */
   const idxOrder = () => {
-    const next = [];
-    for (const g of idxList.querySelectorAll('.pbv-idx-group')) {
-      const head = blockOf(g.querySelector('.pbv-idx-sec')?.dataset.sec);
-      if (head) next.push(head);
-      for (const row of g.querySelectorAll('.pbv-idx-it')) { const b = blockOf(row.dataset.id); if (b) next.push(b); }
+    const was = groups();
+    const pre = was.find(g => !g.head);
+    const next = pre ? pre.blocks.slice() : [];
+    for (const g of idxList.querySelectorAll('.pbv-idx-sec')) {
+      const was1 = was.find(x => x.head?.id === g.dataset.sec);
+      if (was1) next.push(was1.head, ...was1.blocks);
     }
     return next;
   };
   const dragEnd = (cancel) => {
-    const { it, ghost, order } = drag, isSec = drag.sec;
+    const { it, ghost, order } = drag;
     cancelAnimationFrame(drag.raf);
-    clearTimeout(drag.spring?.t);
     page.classList.remove('is-dragging');
-    for (const s of idxList.querySelectorAll('.pbv-idx-sec.is-drop')) s.classList.remove('is-drop');
     const next = cancel ? [] : idxOrder();
     const changed = !cancel && next.length === t.body.length && next.map(b => b.id).join() !== order;
-    /* the carried row settles into its slot, or into the folded heading */
-    const at = isSec ? it.querySelector('.pbv-idx-sec') : (it.offsetParent ? it : it.parentElement.previousElementSibling);
-    const home = at.getBoundingClientRect();
+    const home = it.querySelector('.pbv-idx-sec').getBoundingClientRect();
     ghost.classList.add('is-landing');
     ghost.style.left = home.left + 'px'; ghost.style.top = home.top + 'px';
-    if (!isSec && !it.offsetParent) ghost.style.opacity = '0';
-    const id = isSec ? it.querySelector('.pbv-idx-sec').dataset.sec : it.dataset.id;
+    const id = it.querySelector('.pbv-idx-sec').dataset.sec;
     setTimeout(() => {
       ghost.remove();
-      idxList.classList.remove('is-sec-drag');
       drag = null;
       if (changed) {
         t.body = next; t.updated = mxNow(); save();
         paintBody(id);
-        requestAnimationFrame(() => isSec ? goSec(id) : jump(id));
+        requestAnimationFrame(() => goSec(id));
       } else paintIdx();
       spy();
     }, 200);
   };
   idxList.addEventListener('pointerdown', (e) => {
     if (use || e.button !== 0 || drag || renaming) return;
-    const row = e.target.closest('.pbv-idx-it');
-    const secHead = !row && !e.target.closest('.pbv-idx-ren, .pbv-idx-fold, input') && e.target.closest('.pbv-idx-sec:not(.is-pre)');
-    if (!row && !secHead) return;
-    /* a section is carried as its whole group; a paragraph as its row */
-    const it = row || secHead.parentElement;
-    const handle = row || secHead;
+    if (e.target.closest('.pbv-idx-ren, input')) return;
+    const secHead = e.target.closest('.pbv-idx-sec');
+    if (!secHead) return;
+    const it = secHead.parentElement;
     const x0 = e.clientX, y0 = e.clientY;
     const move = (ev) => {
       if (!drag) {
         /* a click stays a click until the hand has actually moved */
         if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
-        const r = handle.getBoundingClientRect();
-        const ghost = handle.cloneNode(true);
+        const r = secHead.getBoundingClientRect();
+        const ghost = secHead.cloneNode(true);
         ghost.classList.add('pbv-drag-ghost');
         ghost.style.width = r.width + 'px'; ghost.style.left = r.left + 'px'; ghost.style.top = r.top + 'px';
         document.body.append(ghost);
-        drag = { it, ghost, sec: !row, dx: x0 - r.left, dy: y0 - r.top, y: ev.clientY,
+        drag = { it, ghost, dx: x0 - r.left, dy: y0 - r.top, y: ev.clientY,
           order: t.body.map(b => b.id).join() };
         it.classList.add('is-slot');
-        /* carrying a section, every section folds to its heading: the list
-           becomes just the things being put in order */
-        if (!row) idxList.classList.add('is-sec-drag');
         page.classList.add('is-dragging');
         drag.raf = requestAnimationFrame(dragScroll);
       }
@@ -1793,7 +1725,6 @@ function templatePage(t, use = false, inChat = false) {
   const nomatch = h('p', { class: 'mx-doc-none', hidden: true }, 'Nothing in this document matches that search.');
   function filter() {
     const q = qIn.value.trim().toLowerCase();
-    if (searching !== !!q) { searching = !!q; paintIdx(); }
     let shown = 0;
     for (const sec of docBody.querySelectorAll('.mx-sec')) {
       /* a section whose name has the words keeps everything under it */
@@ -1804,7 +1735,6 @@ function templatePage(t, use = false, inChat = false) {
         const b = blockOf(el.dataset.id);
         const hit = !q || secHit || (b && plain(b.p).toLowerCase().includes(q));
         el.hidden = !hit; inSec += hit ? 1 : 0;
-        idxList.querySelector(`.pbv-idx-it[data-id="${el.dataset.id}"]`)?.toggleAttribute('hidden', !hit);
       }
       const keep = !q || inSec > 0 || secHit;
       sec.hidden = !keep;
@@ -1898,7 +1828,7 @@ function templatePage(t, use = false, inChat = false) {
         { keyboard: e.detail === 0, small: true }); } },
       icon('plus', 'ico ico-14')));
 
-  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + ' is-fmt-' + mxFormat(t) }, docBar,
+  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) }, docBar,
     h('div', { class: 'mx-doc-in' },
       use ? h('h1', { class: 'mx-doc-title' }, t.name || 'Untitled template') : title, docBody, nomatch));
   /* a blank in the document and its field find each other */
@@ -1909,9 +1839,8 @@ function templatePage(t, use = false, inChat = false) {
   const docScroll = h('div', { class: 'mx-tpl-doc' }, sheet);
 
   /* ── the outline follows the reading ── */
-  let curId = null, curSec = null;
+  let curSec = null;
   function markCurrent() {
-    for (const b of idxList.querySelectorAll('.pbv-idx-it')) b.setAttribute('aria-current', String(b.dataset.id === curId));
     for (const x of idxList.querySelectorAll('.pbv-idx-sec')) x.setAttribute('aria-current', String(x.dataset.sec === curSec));
   }
   /* which section's heading is out of sight above, while its paragraphs
@@ -1948,7 +1877,6 @@ function templatePage(t, use = false, inChat = false) {
       if (!cur || el.getBoundingClientRect().top <= top) cur = el;
     }
     if (held) return markCurrent();
-    curId = cur?.dataset.id || null;
     curSec = cur?.closest('.mx-sec')?.dataset.id || null;
     markCurrent();
   };
@@ -2008,24 +1936,24 @@ function templatePage(t, use = false, inChat = false) {
   const toWord = () => {
     const esc = (x) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const txt = (x) => esc(x).replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => esc(vals[k]?.trim() || `[${mxFieldLabel(t, k)}]`));
-    const fmt = mxFormat(t);
-    const style = fmt === 'legal'
-      ? 'body{font-family:Arial,sans-serif;font-size:10.5pt;line-height:1.5;text-align:justify}'
-        + 'h1{font-size:11pt;font-weight:bold;text-align:center;text-transform:uppercase;margin:0 0 22pt}'
-        + 'h2{font-size:10.5pt;font-weight:bold;margin:16pt 0 8pt}p{margin:0 0 8pt}'
-      : fmt === 'letter'
-        ? 'body{font-family:Arial,sans-serif;font-size:11pt;line-height:1.6}'
-          + 'h1{font-size:13pt;font-weight:bold;margin:0 0 18pt}p{margin:0 0 12pt}'
-        : 'body{font-family:Georgia,serif;font-size:12pt;line-height:1.5}'
-          + 'h1{font-size:20pt;font-weight:normal;margin:0 0 18pt}h2{font-size:12pt;margin:18pt 0 6pt}p{margin:0 0 10pt}';
-    /* numbered clauses carry their numbers into the file, because that is
-       what makes it the document it is */
-    let si = 0, ci = 0;
+    const layout = mxSet(t, 'layout'), pt = mxSet(t, 'size');
+    const face = { times: "'Times New Roman',serif", arial: 'Arial,sans-serif', calibri: 'Calibri,sans-serif' }[mxSet(t, 'face')];
+    const paper = { a4: '21cm 29.7cm', letter: '8.5in 11in', a3: '29.7cm 42cm' }[mxSet(t, 'page')];
+    const style = `@page{size:${paper};margin:2.54cm}`
+      + `body{font-family:${face};font-size:${pt}pt;line-height:1.5${layout === 'legal' ? ';text-align:justify' : ''}}`
+      + (layout === 'legal'
+        ? `h1{font-size:${+pt + 1}pt;font-weight:bold;text-align:center;text-transform:uppercase;margin:0 0 22pt}`
+          + `h2{font-size:${pt}pt;font-weight:bold;margin:16pt 0 8pt}p{margin:0 0 8pt}`
+        : `h1{font-size:${+pt + 7}pt;font-weight:bold;margin:0 0 18pt}`
+          + `h2{font-size:${+pt + 1}pt;font-weight:bold;margin:16pt 0 6pt}p{margin:0 0 10pt}`);
+    /* a numbered layout carries its section numbers into the file, because
+       that is what makes it the document it is. Paragraphs are paragraphs:
+       Word does not number them and neither does this. */
+    let si = 0;
     const body = t.body.filter(b => (b.h ?? b.p).trim()).map(b => {
-      if (fmt === 'letter') return b.h !== undefined ? '' : `<p>${txt(b.p)}</p>`;
-      if (b.h !== undefined) { si++; ci = 0; return `<h2>${fmt === 'legal' ? si + '&nbsp;&nbsp;&nbsp;&nbsp;' : ''}${txt(b.h)}</h2>`; }
-      ci++;
-      return `<p>${fmt === 'legal' && si ? `${si}.${ci}&nbsp;&nbsp;&nbsp;&nbsp;` : ''}${txt(b.p)}</p>`;
+      if (layout === 'letter') return b.h !== undefined ? '' : `<p>${txt(b.p)}</p>`;
+      if (b.h !== undefined) { si++; return `<h2>${layout === 'legal' ? si + '.&nbsp;&nbsp;&nbsp;&nbsp;' : ''}${txt(b.h)}</h2>`; }
+      return `<p>${txt(b.p)}</p>`;
     }).join('');
     const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8">`
       + `<title>${esc(t.name || 'Untitled template')}</title><style>${style}</style></head>`
@@ -2053,7 +1981,7 @@ function templatePage(t, use = false, inChat = false) {
   const outlineBlock = h('div', { class: 'mx-tpl-out' },
     h('div', { class: 'mx-tpl-side-head' },
       h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, 'Outline'), countOut),
-      h('span', { class: 'pb-grow' }), idxFoldBtn, hideBtn),
+      h('span', { class: 'pb-grow' }), hideBtn),
     idxList);
   const fieldsBlock = h('div', { class: 'mx-tpl-fields' },
     h('div', { class: 'mx-tpl-side-head' },
@@ -2280,7 +2208,7 @@ function mxTplBuiltIntro(t, text, files) {
     { role: 'bot', cites: null,
       answer: `Drafted ${t.name || 'the template'} — ${mxPlural(mxTplSecs(t), 'section')}, `
         + `with ${mxPlural(t.fields.length, 'blank')} named and ready to fill, `
-        + `set as ${mxFormatName(t).toLowerCase()}.\n\n`
+        + `set as ${mxSetSays(t)}.\n\n`
         + 'It is a draft: read it before you publish it. Tell me what to add, cut or word '
         + 'differently, and I will change it as a new version.',
       steps: [

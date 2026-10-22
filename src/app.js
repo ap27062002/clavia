@@ -1082,8 +1082,6 @@ const seededBot = (m, ses) => ({
   artifact: 'artifact' in m ? m.artifact : ses.artifact,
   inline: m.inline || null, traceOpen: false,
   suggest: m.suggest || null,
-  /* a question the answer cannot be given without */
-  choice: m.choice || null,
 });
 
 function openSession(ses) {
@@ -2574,7 +2572,7 @@ function chatPanel(q, pre, about, existing) {
      the full view's other hosts are stood down so its painters no-op */
   threadScroll = h('div', { class: 'thread-scroll cp-scroll' });
   presenceHost = typingHost = queueHost = shareHost = costHost = artsHost = limitHost
-    = repHost = null;
+    = repHost = askHost = null;
 
   const close = closeArtifact = () => {
     main.dataset.artifact = 'closed';
@@ -3712,7 +3710,6 @@ function renderBot(m) {
       el.append(h('div', { class: 'msg-inline' }, RENDER[a.kind](a, { inline: true })));
     } else if (m.artifact) el.append(artifactCard(m.artifact));
     el.append(msgActions(m));
-    if (m.choice) el.append(askCard(m));
     if (m.suggest?.length) el.append(suggestList(m));
     /* the header total is the sum of these, so it moves when one lands,
        and so does what the chat has made */
@@ -3920,34 +3917,6 @@ function answer(prompt) {
    stays quiet and every turn still has its handles */
 /* Where to go next, offered under the answer. Each one is a message you
    could have typed; picking it sends it, and the list goes. */
-/* ── a question that has to be answered before the work can go on ──
-   Some things cannot be guessed from the ask, and guessing them wastes
-   the turn. The answer stops and asks, with the choices laid out and
-   what each one means. Picked, the card settles into the answer you
-   gave, so the thread still reads as a conversation afterwards. */
-function askCard(m) {
-  const c = m.choice;
-  const box = h('div', { class: 'msg-ask' + (c.picked ? ' is-answered' : '') });
-  const paint = () => {
-    const chosen = c.picked && c.options.find(o => o.key === c.picked);
-    box.classList.toggle('is-answered', !!chosen);
-    box.replaceChildren(
-      h('div', { class: 'msg-ask-q' }, c.question),
-      ...(chosen
-        ? [h('div', { class: 'msg-ask-said' },
-            h('span', { class: 'msg-ask-tick', 'aria-hidden': 'true', html: '<svg viewBox="0 0 16 16" fill="none" '
-              + 'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
-              + '<path d="M3.5 8.5l3 3 6-6.5"/></svg>' }),
-            h('span', {}, chosen.label))]
-        : c.options.map(o => h('button', { class: 'msg-ask-opt', type: 'button',
-            onclick: () => { c.picked = o.key; paint(); c.onPick?.(o.key, o); } },
-            h('span', { class: 'msg-ask-l' }, o.label),
-            o.desc ? h('span', { class: 'msg-ask-d' }, o.desc) : null))));
-  };
-  paint();
-  return box;
-}
-
 function suggestList(m) {
   const box = h('div', { class: 'sugg' },
     h('div', { class: 'sugg-h' }, 'Suggestions'),
@@ -4143,6 +4112,41 @@ const faceEl = (name, cls = '', attrs = {}) => h('span', Object.assign({
    becomes a real question — two people talking to each other do not
    want a third voice in every gap. One switch, above the box, and only
    once there is somebody to share it with. */
+/* ── what the answer stopped to ask ───────────────────────────
+   Some things cannot be guessed from the ask — how a document is set,
+   what size paper it is for — and guessing wastes the work. The answer
+   stops and asks, in a card over the box you would have answered in,
+   not as another message in the thread. Every question at once, each a
+   row of choices; the work goes on when they are all answered. */
+let askHost = null, askSpec = null;
+function chatAsk(spec) {
+  askSpec = spec ? { ...spec, answers: { ...(spec.answers || {}) } } : null;
+  paintAsk();
+}
+function paintAsk() {
+  if (!askHost) return;
+  askHost.dataset.on = String(!!askSpec);
+  if (!askSpec) return askHost.replaceChildren();
+  const { title, questions, action = 'Use these', onDone } = askSpec;
+  const done = () => questions.every(q => askSpec.answers[q.key]);
+  const go = h('button', { class: 'cask-go btn btn--primary', type: 'button', disabled: !done(),
+    onclick: () => { const a = askSpec.answers, f = onDone; chatAsk(null); f?.(a); } }, action);
+  const paint = () => {
+    askHost.replaceChildren(
+      h('div', { class: 'cask' },
+        title ? h('div', { class: 'cask-t' }, title) : null,
+        ...questions.map(q => h('div', { class: 'cask-q' },
+          h('div', { class: 'cask-l' }, q.label),
+          h('div', { class: 'cask-opts' }, ...q.options.map(o => h('button', {
+            class: 'cask-opt' + (askSpec.answers[q.key] === o.key ? ' is-on' : ''),
+            type: 'button', 'aria-pressed': String(askSpec.answers[q.key] === o.key),
+            'data-tip': o.desc || null,
+            onclick: () => { askSpec.answers[q.key] = o.key; paint(); } }, o.label))))),
+        h('div', { class: 'cask-foot' }, go)));
+  };
+  paint();
+}
+
 let repHost = null;
 const repOn = () => !thread || thread.assistant !== false;
 
@@ -4568,6 +4572,7 @@ register('thread', () => {
   artsHost = h('div', { class: 'thread-arts' });
   limitHost = h('div', { class: 'lim-dock', 'data-on': 'false' });
   repHost = h('div', { class: 'arep', 'data-on': 'false' });
+  askHost = h('div', { class: 'cask-dock', 'data-on': 'false' });
   paintShare();
   paintCost();
   paintArts();
@@ -4576,6 +4581,7 @@ register('thread', () => {
   paintReplies();
   paintQueue();
   paintTyping();
+  paintAsk();
 
   const el = h('div', { class: 'thread' },
     h('header', { class: 'thread-head' },
@@ -4630,8 +4636,9 @@ register('thread', () => {
            margin, so anything between the two gets pulled underneath it */
         typingHost,
         queueHost,
-        /* the last thing above the box, so it reads as part of it */
+        /* the last things above the box, so they read as part of it */
         repHost,
+        askHost,
         /* Out of usage is not a message you can send, so there is no
            box to type it in. What replaces the composer says when the
            month comes back and offers the only thing left to do. */

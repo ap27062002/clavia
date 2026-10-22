@@ -238,13 +238,9 @@
 /* the document has a column, not a page, so it gives its margins back */
 .mx-tpl.is-in-chat .mx-tpl-doc { padding: 4px 14px 56px; }
 .mx-tpl.is-in-chat.is-side-hidden .mx-tpl-doc { padding-left: 30px; padding-right: 30px; }
-.mx-tpl.is-in-chat .mx-doc-in { padding: 26px 30px 44px; }
 .mx-tpl.is-in-chat .mx-doc-bar { padding: 0 20px 0 30px; }
 .mx-tpl.is-in-chat .mx-doc-bar .pbv-bar-ctx { padding: 0 20px 0 30px; }
-.mx-tpl.is-in-chat .mx-doc-title { font-size: 24px !important; }
-.mx-tpl.is-in-chat .mx-blk-n, .mx-tpl.is-in-chat .mx-blk-del { display: none; }
-/* except where the numbers are the document rather than a handle on it */
-.mx-tpl.is-in-chat .is-fmt-legal .mx-blk-n { display: block; }
+.mx-tpl.is-in-chat .mx-blk-del { display: none; }
 
 .mx-tpl {
   position: relative;
@@ -341,7 +337,6 @@
   background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
   box-shadow: 0 1px 2px rgba(20,20,19,.03), 0 12px 32px -24px rgba(20,20,19,.18);
 }
-.mx-doc-in { padding: 36px 56px 56px; }
 /* ── the bar over the sheet ──
    Slim, and its tools end where the text below ends. Once the page is
    moving under it, it casts one soft shadow from its own edge. */
@@ -361,20 +356,13 @@
 .mx-doc-bar .pbv-find:not(.is-open) .pbv-find-x { display: none; }
 .mx-doc-bar .pbv-bar-ctx { background: #FCFBF9; }
 .mx-fold-all:disabled { opacity: .35; pointer-events: none; }
-.mx-doc-title { display: block; width: 100%; overflow: hidden; resize: none; field-sizing: content; font-family: var(--serif) !important; font-size: 30px !important; letter-spacing: -0.01em; line-height: 1.25; margin-bottom: 22px !important; }
-.mx-doc-h { margin: 26px 0 8px; font-family: var(--serif); font-size: 19px; font-weight: 400; letter-spacing: -0.005em; outline: 0; }
-.mx-doc-p { margin: 0 0 12px; font-size: 14px; line-height: 1.75; color: var(--text); outline: 0; }
 .mx-doc-h:empty::before, .mx-doc-p:empty::before { content: attr(data-ph); color: var(--text-faint); }
 
 /* ── a section on the sheet ──
    No rule under the heading: its chevron sits at the right corner, and a
    delete and an add-a-paragraph-here come up beside it under the pointer. */
-.mx-sec { position: relative; margin: 0 0 26px; }
 .mx-sec:last-child { margin-bottom: 0; }
 .mx-sec[hidden], .mx-blk[hidden] { display: none; }
-.mx-sec-head { position: relative; display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; }
-.mx-sec-n { flex: none; font-family: var(--serif); font-size: 19px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
-.mx-sec-head .mx-doc-h { flex: 1 1 auto; min-width: 6ch; margin: 0 auto 0 0; overflow-wrap: break-word; }
 .mx-sec-head .pbv-icon { align-self: center; }
 .mx-sec-fold { order: 3; margin: 0 6px 0 0; }
 .mx-sec-fold svg { width: 13px; height: 13px; transform: rotate(90deg); transition: transform 240ms var(--pb-open); }
@@ -390,20 +378,8 @@
 .mx-sec.is-folded { margin-bottom: 10px; }
 .mx-sec.is-folded .mx-sec-head { margin-bottom: 0; }
 .mx-sec.is-folded + .mx-sec:not(.is-folded) { margin-top: 26px; }
-/* a paragraph: its number out in the margin and a delete out in the other,
-   both only under the pointer, so the document reads clean */
+/* a paragraph, and a delete out in the margin under the pointer */
 .mx-blk { position: relative; border-radius: 6px; }
-.mx-blk-n {
-  position: absolute; left: -46px; top: 1px; width: 38px; text-align: right;
-  font-size: 11.5px; line-height: 1.9; color: var(--text-faint);
-  font-variant-numeric: tabular-nums; opacity: 0;
-  transition: opacity var(--fast) var(--ease);
-}
-.mx-blk-del { position: absolute; right: -34px; top: -1px; width: 24px; height: 24px; opacity: 0; }
-.mx-blk-del svg { width: 14px; height: 14px; }
-.mx-blk:hover .mx-blk-n { opacity: 1; }
-.mx-blk:hover .mx-blk-del, .mx-blk-del:focus-visible { opacity: 1; }
-.mx-blk-del:hover { color: var(--pos-walkaway); background: var(--pos-walkaway-bg); }
 .mx-blk.is-new, .mx-sec.is-new { animation: mxBlkIn 480ms var(--ease-out); }
 @keyframes mxBlkIn { from { opacity: 0; transform: translateY(-4px); } }
 /* going to a paragraph from the outline: it is lit where it stands */
@@ -417,64 +393,65 @@
   transition: height 240ms var(--ease), opacity 160ms var(--ease), margin 240ms var(--ease);
 }
 /* ══ How the document is set ══════════════════════════════════════
-   A template is a document somebody will open in Word, so it can be
-   laid out the way the agreement itself will be. Three settings; the
-   one chosen when it was drafted is the one it is kept in.
-
-   Numbered clauses — an agreement as it is usually set: the title
-   centred in caps, the clauses numbered 1 then 1.1 down the page, the
-   text justified, in the sans a Word document is written in. */
-/* a page, not a card: square corners and a hairline, the way a sheet of
-   A4 sits on a desk */
-.mx-doc.is-fmt-legal { max-width: 816px; border-radius: 2px; box-shadow: 0 1px 2px rgba(20,20,19,.04), 0 18px 40px -30px rgba(20,20,19,.22); }
-.mx-doc.is-fmt-legal .mx-doc-bar { border-radius: 2px 2px 0 0; }
-.mx-doc.is-fmt-legal .mx-doc-in {
-  padding: 72px 96px 96px;
-  font-family: Arial, Helvetica, sans-serif;
+   A template is a document somebody will open in Word, so what is on
+   screen is the page that comes out of it: the paper it is for, the
+   face it is set in, the size it is set at, and how it is laid out. */
+.mx-doc { --mx-page: 794px; --mx-margin: 96px; }
+.is-page-a4 { --mx-page: 794px; }        /* 210mm at 96dpi */
+.is-page-letter { --mx-page: 816px; }    /* 8.5in */
+.is-page-a3 { --mx-page: 1123px; }       /* 297mm */
+.mx-doc.is-page-a4, .mx-doc.is-page-letter, .mx-doc.is-page-a3 { max-width: var(--mx-page); }
+.is-face-times .mx-doc-in { font-family: 'Times New Roman', Times, serif; }
+.is-face-arial .mx-doc-in { font-family: Arial, Helvetica, sans-serif; }
+.is-face-calibri .mx-doc-in { font-family: Calibri, Candara, Segoe, sans-serif; }
+.is-size-10 .mx-doc-in { --mx-pt: 13.3px; }
+.is-size-11 .mx-doc-in { --mx-pt: 14.7px; }
+.is-size-12 .mx-doc-in { --mx-pt: 16px; }
+/* the page: a sheet with a hairline and a one-inch margin, square at the
+   corners, so it reads as paper and not as a card */
+.mx-doc { border-radius: 4px; }
+.mx-doc .mx-doc-bar { border-radius: 4px 4px 0 0; }
+.mx-doc-in { padding: var(--mx-margin) var(--mx-margin) calc(var(--mx-margin) * 1.2); }
+.mx-tpl.is-in-chat .mx-doc-in { padding: 44px 48px 60px; }
+.mx-doc-in, .mx-doc-in .mx-doc-p, .mx-doc-in .mx-doc-h, .mx-doc-in .mx-doc-title { font-family: inherit; }
+.mx-doc-p { font-size: var(--mx-pt, 14.7px); line-height: 1.5; margin: 0 0 11px; color: var(--text); outline: 0; }
+.mx-doc-h { font-size: var(--mx-pt, 14.7px); font-weight: 700; letter-spacing: 0; margin: 0; outline: 0;
+  flex: 1 1 auto; min-width: 6ch; overflow-wrap: break-word; }
+.mx-doc-title {
+  display: block; width: 100%; overflow: hidden; resize: none; field-sizing: content;
+  font-family: inherit !important; font-size: calc(var(--mx-pt, 14.7px) * 1.6) !important;
+  font-weight: 700; letter-spacing: 0; line-height: 1.3; margin-bottom: 22px !important;
 }
-.mx-tpl.is-in-chat .mx-doc.is-fmt-legal .mx-doc-in { padding: 44px 52px 64px; }
-.is-fmt-legal .mx-doc-title {
-  font-family: Arial, Helvetica, sans-serif !important;
-  font-size: 14px !important; font-weight: 700; letter-spacing: .02em;
-  text-align: center; text-transform: uppercase; line-height: 1.5;
+.mx-sec { position: relative; margin-bottom: 18px; }
+.mx-sec-head { position: relative; display: flex; align-items: baseline; gap: 0; margin-bottom: 9px; }
+.mx-sec-n {
+  font-family: inherit; font-size: var(--mx-pt, 14.7px); font-weight: 700;
+  color: var(--text); width: 48px; flex: none;
+}
+.mx-sec-head .mx-doc-h { margin: 0 auto 0 0; }
+/* the chevron and the tools are the app's, not the document's: they come
+   up under the pointer and are gone again */
+.mx-sec-fold { opacity: 0; }
+.mx-sec-head:hover .mx-sec-fold, .mx-sec-fold:focus-visible { opacity: 1; }
+.mx-blk-del { position: absolute; right: -34px; top: -1px; width: 24px; height: 24px; opacity: 0; }
+.mx-blk-del svg { width: 14px; height: 14px; }
+.mx-blk:hover .mx-blk-del, .mx-blk-del:focus-visible { opacity: 1; }
+.mx-blk-del:hover { color: var(--pos-walkaway); background: var(--pos-walkaway-bg); }
+
+/* Numbered clauses — the title centred in caps and the text justified. */
+.is-layout-legal .mx-doc-title {
+  font-size: calc(var(--mx-pt, 14.7px) * 1.08) !important;
+  text-align: center; text-transform: uppercase; letter-spacing: .02em;
   margin-bottom: 30px !important;
 }
-.is-fmt-legal .mx-doc-p {
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 13.5px; line-height: 1.5; text-align: justify;
-  margin: 0 0 11px;
-}
-.is-fmt-legal .mx-sec { margin-bottom: 18px; }
-.is-fmt-legal .mx-sec-head { align-items: baseline; gap: 0; margin-bottom: 10px; }
-.is-fmt-legal .mx-sec-n {
-  font-family: Arial, Helvetica, sans-serif; font-size: 13.5px; font-weight: 700;
-  color: var(--text); width: 66px; flex: none;
-}
-.is-fmt-legal .mx-sec-head .mx-doc-h {
-  font-family: Arial, Helvetica, sans-serif; font-size: 13.5px; font-weight: 700;
-  letter-spacing: 0; margin: 0 auto 0 0;
-}
-/* the clause numbers are printed, not a hover affordance: they are part
-   of how the document reads */
-.is-fmt-legal .mx-sec-body { padding-left: 66px; }
-.is-fmt-legal .mx-blk-n {
-  position: absolute; left: -66px; top: 0; width: 58px; text-align: left;
-  font-family: Arial, Helvetica, sans-serif; font-size: 13.5px; line-height: 1.5;
-  color: var(--text); opacity: 1;
-}
-.is-fmt-legal .mx-sec.is-pre .mx-sec-body { padding-left: 0; }
-.is-fmt-legal .mx-blk-del { right: -30px; }
-.is-fmt-legal .mx-chip { font-family: Arial, Helvetica, sans-serif; }
-
-/* Headed sections — the way it reads here: a serif heading, the text
-   ranged left. (The default, and what every template shipped with.) */
-/* Plain letter — no headings and no numbers, one paragraph after
-   another, as a notice or a cover letter is written. */
-.is-fmt-letter .mx-sec-head { display: none; }
-.is-fmt-letter .mx-sec-body { padding-left: 0; }
-.is-fmt-letter .mx-sec { margin-bottom: 0; }
-.is-fmt-letter .mx-doc-p { margin-bottom: 14px; }
-.is-fmt-letter .mx-blk-n { display: none; }
+.is-layout-legal .mx-doc-p { text-align: justify; }
+/* Headed sections — the default, and what a template with no setting is. */
+.is-layout-headed .mx-sec-n { display: none; }
+.is-layout-headed .mx-doc-h { font-weight: 600; }
+/* Plain letter — no headings at all, one paragraph after another. */
+.is-layout-letter .mx-sec-head { display: none; }
+.is-layout-letter .mx-sec { margin-bottom: 0; }
+.is-layout-letter .mx-doc-p { margin-bottom: 14px; }
 
 /* ── what a search found ──
    The words are in the document itself, so the browser's own highlight
@@ -584,8 +561,7 @@
   .mx-doc-in { padding: 26px 28px 40px; }
   .mx-doc-bar { padding: 0 20px 0 28px; }
   .mx-doc-bar .pbv-bar-ctx { padding: 0 20px 0 28px; }
-  .mx-blk-n, .mx-blk-del { display: none; }
-  .is-fmt-legal .mx-blk-n { display: block; }
+  .mx-blk-del { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .mx-size.is-reading, .mx-rev-td.is-reading::after { animation: none; }
