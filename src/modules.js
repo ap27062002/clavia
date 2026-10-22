@@ -862,11 +862,15 @@ function templatesView() {
   const o = MX.templates.open;
   if (o === 'new') return mxCreatePage({ view: 'templates', back: 'Templates', title: 'Create New Template',
     placeholder: 'Describe the document you want a template for, or add one of your own', run: buildTemplate });
-  /* #templates/<id> is the template itself; #templates/<id>/use is a document being made from it */
+  /* #templates/<id>/use is a document being made from the template, and
+     has a page of its own. #templates/<id> is the template, which is an
+     artifact: the list shows, and the document opens over it. */
   const [id, sub] = (o || '').split('/');
   const t = id && mxTemplate(id);
   if (o && !t) MX.templates.open = null;
-  return t ? templatePage(t, sub === 'use') : templateList();
+  if (t && sub === 'use') return templatePage(t, true);
+  if (t) { MX.templates.open = null; queueMicrotask(() => mxTplView(t)); }
+  return templateList();
 }
 
 function templateList() {
@@ -885,7 +889,7 @@ function templateList() {
       : k === 'status' ? PB_ORDER[x.status] : (x[k] || '').toLowerCase(),
     cells: (x) => [[mxTile('tpl'), h('span', { class: 'pb-row-name' }, x.name || 'Untitled template')], x.kind, pbStatus(x.status), 'v' + mxTplVer(x),
       String(x.used), mxPerson(x.owner), pbWhen(x.updated)],
-    open: (x) => mxOpen('templates', x.id),
+    open: (x) => mxTplView(x),
     /* the same things in the same order a playbook's row offers, because
        they are the same things: see it, work on it, name it, hand it on,
        copy it — and the one that destroys it last, after a rule. Open in
@@ -893,7 +897,7 @@ function templateList() {
     menu: (x, row) => {
       GLYPHS.retitle ||= '<path d="M5.5 7V5.5h13V7"/><path d="M12 5.5v13"/><path d="M9.5 18.5h5"/>';
       return [
-        { label: 'View', icon: 'look', run: () => mxOpen('templates', x.id) },
+        { label: 'View', icon: 'look', run: () => mxTplView(x) },
         { label: 'Edit with Chat', icon: 'rename', run: () => mxTplEditInChat(x) },
         { label: 'Rename', icon: 'retitle', run: () => mxTplRename(x, () => t.paint()) },
         { label: 'Share', icon: 'share', run: () => mxTplShare(x) },
@@ -1211,7 +1215,13 @@ function mxReadDeal(t, text) {
    inChat is the same page docked beside its conversation: the way back and
    the Publish button are the shell's there, so this one does not repeat
    them. */
-function templatePage(t, use = false, inChat = false) {
+function templatePage(t, use = false, shell = false) {
+  /* In the shell the document is either the whole screen or docked
+     beside a conversation. Full, it is read as a page and the outline is
+     open; docked, the document takes the width and the outline is one
+     click away. */
+  const full = shell && !!MX.templates.full;
+  const inChat = shell && !full;
   const vals = use ? (MX.templates.values[t.id] ||= {}) : {};
   const filled = () => t.fields.filter(f => vals[f.key]?.trim()).length;
   const prog = h('span', { class: 'mx-fill-n' });
@@ -1905,12 +1915,8 @@ function templatePage(t, use = false, inChat = false) {
      What the document is and how much of it there is, the search, one
      control that folds every section away and opens them all again, and
      the plus that adds a paragraph or a section. */
-  const count = h('span', { class: 'pbv-count' }), countOut = h('span', { class: 'mx-fill-n' });
-  const paintCount = () => {
-    const n = groups().filter(g => g.head).length;
-    count.textContent = n;
-    countOut.textContent = mxPlural(n, 'section');
-  };
+  const count = h('span', { class: 'pbv-count' });
+  const paintCount = () => { count.textContent = groups().filter(g => g.head).length; };
   const foldAllBtn = h('button', { class: 'pbv-add mx-fold-all', type: 'button', onclick: () => foldAll(!allFolded()) });
   const ctxN = h('span', { class: 'pbv-bar-ctx-n' }), ctxT = h('span', { class: 'pbv-bar-ctx-t' });
   const ctx = h('button', { class: 'pbv-bar-ctx', type: 'button', tabindex: '-1', 'aria-hidden': 'true',
@@ -2038,7 +2044,7 @@ function templatePage(t, use = false, inChat = false) {
      width inside, so it slides out whole instead of being squeezed. */
   /* a draft started from a request goes back to that request */
   const from = use && MX.templates.from?.tpl === t.id ? MX.templates.from : null;
-  const back = inChat ? null
+  const back = shell ? null
     : use
       ? h('button', { class: 'mx-back', type: 'button', onclick: () => from ? (MX.templates.open = null, mxOpen('intake', from.id)) : mxOpen('templates', t.id) },
           h('span', { class: 'mx-back-ar', html: PB_SVG.chev }), from ? from.id : t.name || 'Untitled template')
@@ -2048,7 +2054,7 @@ function templatePage(t, use = false, inChat = false) {
     'data-tip': 'Hide Outline', html: PBV_PANEL, onclick: () => showSide(false) });
   const outlineBlock = h('div', { class: 'mx-tpl-out' },
     h('div', { class: 'mx-tpl-side-head' },
-      h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, 'Outline'), countOut),
+      h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, 'Sections')),
       h('span', { class: 'pb-grow' }), hideBtn),
     idxList);
   const fieldsBlock = h('div', { class: 'mx-tpl-fields' },
@@ -2111,15 +2117,15 @@ function templatePage(t, use = false, inChat = false) {
     page.classList.toggle('is-side-hidden', !on);
   }
 
-  const page = h('div', { class: 'mx-tpl' + (use ? ' is-use' : '') + (inChat ? ' is-in-chat' : '')
-      + (sideHidden() ? ' is-side-hidden' : '') },
+  const page = h('div', { class: 'mx-tpl' + (use ? ' is-use' : '') + (shell ? ' is-shell' : '')
+      + (inChat ? ' is-in-chat' : '') + (sideHidden() ? ' is-side-hidden' : '') },
     h('div', { class: 'mx-tpl-side-wrap' }, side),
     h('div', { class: 'mx-tpl-main' },
       /* Docked beside its conversation nothing stands over the document
          at all — the shell's own header says what this is and whether it
          is published, and the way back to the outline floats at the
          corner of the view, as the playbook's does. */
-      inChat ? null : h('div', { class: 'mx-tpl-bar' },
+      shell ? null : h('div', { class: 'mx-tpl-bar' },
         showSideBtn,
         use
           ? h('span', { class: 'mx-tpl-kind' }, h('span', { class: 'mx-tpl-new' }, `New ${t.name || 'document'}`),
@@ -2134,7 +2140,7 @@ function templatePage(t, use = false, inChat = false) {
           ? h('button', { class: 'btn btn--primary', type: 'button', onclick: draft }, 'Create Draft')
           : null),
       docScroll),
-    inChat ? showSideBtn : null,
+    shell ? showSideBtn : null,
     resize);
   side.inert = sideHidden();
   setSideW(inChat ? SIDE_W.base : (state.mxSideW || SIDE_W.base));
@@ -2197,10 +2203,14 @@ function mxTplArtifact(t) {
   }
   return a;
 }
+/* an address that names the artifact is a link somebody followed, and a
+   link lands on the thing itself, full screen */
 function mxTplArtifactById(id) {
   const m = /^template-(.+)$/.exec(id);
   const t = m && mxTemplate(m[1]);
-  return t ? mxTplArtifact(t) : null;
+  if (!t) return null;
+  MX.templates.full = true;
+  return mxTplArtifact(t);
 }
 
 /* published, a template is the one drafts are made from */
@@ -2326,8 +2336,19 @@ function mxTplSessionRoute(id) {
    to ask first, and the answer decides how the document is set */
 function mxTplEditInChat(t, intro, hold) {
   MX.templates.open = null;
+  MX.templates.full = false;
   openSession(mxTplSession(t, intro));
   if (!hold) queueMicrotask(() => openArtifact(mxTplArtifact(t)));
+}
+
+/* Read it: the document full screen, with the shell's own header over it
+   — the way pbView opens a playbook. The template has no page of its
+   own any more, because the thing itself is the page. */
+function mxTplView(t) {
+  MX.templates.full = true;
+  if (state.view !== 'templates' || MX.templates.open) { mxClose('templates'); go('templates'); }
+  openArtifact(mxTplArtifact(t), { full: true });
+  setArtifactHash(mxTplArtifact(t));
 }
 
 /* ── registering the kind ─────────────────────────────────────── */

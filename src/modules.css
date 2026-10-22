@@ -231,10 +231,12 @@
 /* ================================================================
    Templates — the fields down the side, the document beside them
 ================================================================ */
-/* docked beside its conversation, the page is the panel's whole height
-   and scrolls inside itself, as a playbook does there */
+/* in the shell — docked beside a conversation or filling the screen —
+   the page is the shell's whole height and scrolls inside itself, as a
+   playbook does there */
 .artifact-shell > .mx-tpl { min-height: 0; overflow: hidden; animation: none; }
-.mx-tpl.is-in-chat .mx-tpl-side { padding: 14px 12px 32px 16px; }
+.mx-tpl.is-shell .mx-tpl-side { padding: 14px 12px 32px 16px; }
+.mx-tpl.is-shell .mx-tpl-doc { padding-top: 18px; }
 /* the document has a column, not a page, so it gives its margins back */
 .mx-tpl.is-in-chat .mx-tpl-doc { padding: 4px 14px 56px; }
 .mx-tpl.is-in-chat.is-side-hidden .mx-tpl-doc { padding-left: 30px; padding-right: 30px; }
@@ -284,17 +286,17 @@
 /* beside a conversation there is no bar to put it in, so it is pinned to
    the corner of the view — there however far down the document you are,
    the way the playbook's is */
-.mx-tpl.is-in-chat .mx-show-side {
+.mx-tpl.is-shell .mx-show-side {
   position: absolute; top: 16px; left: 16px; z-index: 3; margin: 0;
   opacity: 0; visibility: hidden; transform: translateX(-8px);
   transition: opacity 120ms var(--ease), transform 200ms var(--ease), visibility 0s 120ms;
 }
-.mx-tpl.is-in-chat.is-side-hidden .mx-show-side {
+.mx-tpl.is-shell.is-side-hidden .mx-show-side {
   display: grid; opacity: 1; visibility: visible; transform: none;
   transition: opacity 220ms var(--ease) 180ms, transform 340ms var(--pb-open) 140ms, visibility 0s;
 }
 /* and the sheet keeps clear of it */
-.mx-tpl.is-in-chat.is-side-hidden .mx-tpl-doc { padding-left: 62px; padding-right: 62px; }
+.mx-tpl.is-shell.is-side-hidden .mx-tpl-doc { padding-left: 62px; padding-right: 62px; }
 @media (prefers-reduced-motion: reduce) { .mx-tpl, .mx-tpl-side { transition: none; } }
 /* the outline and the fields, one under the other, parted by a hairline */
 .mx-tpl-out, .mx-tpl-fields { min-width: 0; }
