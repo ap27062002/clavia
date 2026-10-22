@@ -2424,7 +2424,7 @@ function mxTplAsk(t, prompt, files) {
     const page = /\b(us|letter|usa|american)\b/.test(n) ? 'letter' : 'a4';
     const face = /calibri/.test(n) ? 'calibri' : /arial|helvetica/.test(n) ? 'arial' : 'times';
     const set = { layout, page, face, size: mxSet(t, 'size') };
-    return { name: `Set it as ${file} is set`,
+    return { name: `Set the way ${file} is set`,
       run: () => { t.set = set; },
       say: () => `Set the same way as ${file}: ${mxSetSays(t)}.\n\n`
         + 'If that is not how it reads to you, say which part is wrong and I will change it.' };
@@ -2436,7 +2436,7 @@ function mxTplAsk(t, prompt, files) {
     const name = want[1].replace(/\b(from|in|of|this|that|the|a|an|doc|document|file)\b/gi, ' ').replace(/\s+/g, ' ').trim();
     const found = mxTplFindSection(name);
     const title = (found ? found.blocks[0].h : name.replace(/\b\w/g, c => c.toUpperCase())) || 'New section';
-    return { name: `Bring ${title} across`,
+    return { name: found ? `Added ${title}${file ? `, from ${file}` : ''}` : `Added ${title}, to be written`,
       run: () => {
         const blocks = (found ? found.blocks : [{ h: title }, { p: '' }]).map(b => ({ ...b, id: pbUid('blk') }));
         t.body.push(...blocks);

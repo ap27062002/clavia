@@ -3114,10 +3114,12 @@ function openArtifact(a, { full = false } = {}) {
           onclick: () => { closeMenu(); a.vi = i; reopen(); },
         },
           h('span', { class: 'ver-row-tag' }, versionLabel(a, i)),
-          /* when it was made is what tells one version from another; who
-             made it is the same answer on nearly every row */
+          /* when it was made, and under it what was made — who made it is
+             the same answer on nearly every row, so it is left to the
+             full history where there is room for it */
           h('span', { class: 'ver-row-main' },
-            h('span', { class: 'ver-row-when' }, v.when)))));
+            h('span', { class: 'ver-row-when' }, v.when),
+            v.name ? h('span', { class: 'ver-row-what' }, v.name) : null))));
       document.body.append(sub);
       const r = rowEl.getBoundingClientRect();
       const w = sub.offsetWidth, hgt = sub.offsetHeight;
@@ -3173,7 +3175,7 @@ function openArtifact(a, { full = false } = {}) {
         h('span', { class: 'ver-row-tag' }, versionLabel(a, i)),
         h('span', { class: 'ver-row-main' },
           h('span', { class: 'ver-row-when' }, v.when),
-          h('span', { class: 'ver-row-by' }, v.by)),
+          h('span', { class: 'ver-row-by' }, v.name ? `${v.name} · ${v.by}` : v.by)),
         latest ? h('span', { class: 'ver-row-flag' }, 'Latest') : null,
       );
     }).reverse();
