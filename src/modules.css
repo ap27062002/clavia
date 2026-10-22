@@ -236,10 +236,15 @@
    playbook does there */
 .artifact-shell > .mx-tpl { min-height: 0; overflow: hidden; animation: none; }
 .mx-tpl.is-shell .mx-tpl-side { padding: 14px 12px 32px 16px; }
-.mx-tpl.is-shell .mx-tpl-doc { padding-top: 18px; }
+/* Where the document starts. The way back to the outline floats at the
+   same height, so it is level with the top of the sheet rather than
+   near it — one number, read by both, because two numbers drift. The
+   playbook sets its pair the same way (.pbv-scroll / .pbv-show-idx). */
+.mx-tpl.is-shell { --mx-doc-top: 22px; }
+.mx-tpl.is-shell.is-in-chat { --mx-doc-top: 14px; }
+.mx-tpl.is-shell .mx-tpl-doc { padding: var(--mx-doc-top) 32px 96px; }
+.mx-tpl.is-shell.is-in-chat .mx-tpl-doc { padding: var(--mx-doc-top) 14px 80px; }
 /* the document has a column, not a page, so it gives its margins back */
-.mx-tpl.is-in-chat .mx-tpl-doc { padding: 4px 14px 56px; }
-.mx-tpl.is-in-chat.is-side-hidden .mx-tpl-doc { padding-left: 30px; padding-right: 30px; }
 
 .mx-tpl.is-in-chat .mx-blk-del { display: none; }
 
@@ -287,7 +292,7 @@
    the corner of the view — there however far down the document you are,
    the way the playbook's is */
 .mx-tpl.is-shell .mx-show-side {
-  position: absolute; top: 16px; left: 16px; z-index: 3; margin: 0;
+  position: absolute; top: var(--mx-doc-top, 22px); left: 16px; z-index: 3; margin: 0;
   opacity: 0; visibility: hidden; transform: translateX(-8px);
   transition: opacity 120ms var(--ease), transform 200ms var(--ease), visibility 0s 120ms;
 }
@@ -297,6 +302,7 @@
 }
 /* and the sheet keeps clear of it */
 .mx-tpl.is-shell.is-side-hidden .mx-tpl-doc { padding-left: 62px; padding-right: 62px; }
+.mx-tpl.is-shell.is-in-chat.is-side-hidden .mx-tpl-doc { padding-left: 54px; padding-right: 54px; }
 @media (prefers-reduced-motion: reduce) { .mx-tpl, .mx-tpl-side { transition: none; } }
 /* the outline and the fields, one under the other, parted by a hairline */
 .mx-tpl-out, .mx-tpl-fields { min-width: 0; }
