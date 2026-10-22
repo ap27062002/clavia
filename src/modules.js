@@ -1617,7 +1617,11 @@ function templatePage(t, use = false, inChat = false) {
             t.fields.splice(t.fields.indexOf(f), 1);
             /* its blanks go back to being plain words */
             for (const el of [...sheet.querySelectorAll(`.mx-chip[data-key="${f.key}"]`)]) {
-              const host = el.closest('[contenteditable]'); el.replaceWith(f.label); host.__b[host.tagName === 'H2' ? 'h' : 'p'] = read(host);
+              /* the chip is contenteditable="false", so it answers closest()
+                 itself — the block it sits in is its parent's */
+              const host = el.parentElement?.closest('.mx-doc-h, .mx-doc-p');
+              el.replaceWith(f.label);
+              if (host?.__b) host.__b[host.tagName === 'H2' ? 'h' : 'p'] = read(host);
             }
             save(); paintFields(); paintProg(); paintIdx();
           } })),
@@ -1625,25 +1629,38 @@ function templatePage(t, use = false, inChat = false) {
   };
   const fieldsEl = h('div', { class: 'mx-fs' });
   const paintFields = () => fieldsEl.replaceChildren(...t.fields.map(fieldRow));
-  /* a new blank goes where the caret last was in the document */
+  /* A new blank goes where the caret last was. Select words first and it
+     takes their place and their name, which is how one is usually made:
+     the word “Customer” in the sentence becomes the blank Customer. */
+  const blockAt = (node) => (node?.nodeType === 1 ? node : node?.parentElement)?.closest('.mx-doc-h, .mx-doc-p') || null;
   const addField = () => {
-    let n = t.fields.length + 1, key;
-    do { key = 'field_' + n++; } while (t.fields.some(f => f.key === key));
-    const f = { key, label: 'New field', hint: '' };
+    const at = last && sheet.contains(last.startContainer) ? blockAt(last.startContainer) : null;
+    const picked = at && !last.collapsed ? last.toString().replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+    const label = picked || 'New field';
+    let key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'field';
+    if (/^\d/.test(key)) key = 'f_' + key;
+    for (let n = 2, base = key; t.fields.some(f => f.key === key); ) key = base + '_' + n++;
+    const f = { key, label, hint: '' };
     t.fields.push(f);
     const c = chip(key);
-    const host = last && sheet.contains(last.startContainer) ? last.startContainer.parentElement.closest('[contenteditable]') || last.startContainer : null;
-    if (host && last) { last.collapse(false); last.insertNode(c); }
-    else {
+    if (at) {
+      if (last.collapsed) last.collapse(false); else last.deleteContents();
+      last.insertNode(c);
+    } else {
       /* nowhere in particular: the end of the last paragraph, and if there
          is not one yet, a paragraph made for it */
       if (!docBody.querySelector('.mx-doc-p')) addParagraph(groups()[groups().length - 1]);
       [...docBody.querySelectorAll('.mx-doc-p')].pop()?.append(' ', c);
     }
-    const el = c.closest('[contenteditable]');
-    if (el) el.__b[el.tagName === 'H2' ? 'h' : 'p'] = read(el);
-    save(); paintFields(); paintChips(); paintProg(); paintIdx();
-    const name = fieldsEl.querySelector('.mx-f:last-child .mx-f-l'); name.focus(); name.select();
+    /* the chip is contenteditable="false" and so answers closest() itself:
+       the block to read back is its parent's, not its own */
+    const el = c.parentElement?.closest('.mx-doc-h, .mx-doc-p');
+    if (el?.__b) el.__b[el.tagName === 'H2' ? 'h' : 'p'] = read(el);
+    last = null;
+    t.updated = mxNow(); save(); paintFields(); paintChips(); paintProg(); paintIdx();
+    const name = fieldsEl.querySelector('.mx-f:last-child .mx-f-l');
+    if (name) { name.focus(); name.select(); }
+    else c.scrollIntoView({ block: 'center', behavior: 'smooth' });
   };
 
   /* values arrive one after another, so you can see where each one went */
@@ -1832,7 +1849,10 @@ function templatePage(t, use = false, inChat = false) {
       onclick: (e) => { e.stopPropagation(); pbWaysMenu(e.currentTarget, 'mx-add', [
         { key: 'para', name: 'Add New Paragraph', icon: () => h('span', { html: PBV_ADD_CLAUSE }) },
         { key: 'section', name: 'Add New Section', icon: () => h('span', { html: PBV_ADD_SECTION }) },
-      ], (k) => k === 'para' ? addParagraph(groups().find(g => secId(g) === curSec) || groups()[groups().length - 1]) : addSection(),
+        { key: 'blank', name: 'Add New Blank', icon: () => h('span', { html: MX_ADD_BLANK }) },
+      ], (k) => k === 'blank' ? addField()
+        : k === 'para' ? addParagraph(groups().find(g => secId(g) === curSec) || groups()[groups().length - 1])
+        : addSection(),
         { keyboard: e.detail === 0, small: true }); } },
       icon('plus', 'ico ico-14')));
 
@@ -1977,15 +1997,15 @@ function templatePage(t, use = false, inChat = false) {
     idxList);
   const fieldsBlock = h('div', { class: 'mx-tpl-fields' },
     h('div', { class: 'mx-tpl-side-head' },
-      h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, use ? 'Fill in' : 'Fields'), prog)),
-    fieldsEl,
-    use ? null : h('div', { class: 'mx-tpl-links' },
-      h('button', { class: 'pbv-add-fb', type: 'button', onclick: addField }, 'Add Field')));
-  /* keeping the template, the outline comes first — it is the document's
-     shape; filling one in, the blanks do, because they are the work */
+      h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, 'Fill in'), prog)),
+    fieldsEl);
+  /* Filling one in, the blanks are the work, so they are listed first and
+     the outline sits under them. Keeping the template, they are not listed
+     at all: a blank belongs in the sentence it is part of, and the panel is
+     the document's shape. A new one is added from the plus over the sheet. */
   const side = h('aside', { class: 'mx-tpl-side' }, back,
     use ? fillAsk() : null,
-    ...(use ? [fieldsBlock, outlineBlock] : [outlineBlock, fieldsBlock]));
+    ...(use ? [fieldsBlock, outlineBlock] : [outlineBlock]));
 
   /* beside a conversation there is far less room, so the panel starts
      narrower there and the document keeps the rest */
@@ -2078,6 +2098,11 @@ function templatePage(t, use = false, inChat = false) {
   if (!t.name && !use) setTimeout(() => title.focus({ preventScroll: true }), 80);
   return page;
 }
+
+/* a blank, as it reads in the document: a word on a dotted rule */
+const MX_ADD_BLANK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" '
+  + 'stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11"/>'
+  + '<path d="M2.5 11.8h11" stroke-dasharray="1.8 1.6"/><path d="M4.6 8.6h4.2"/></svg>';
 
 /* ══ A template as an artifact, and the conversation about it ══════
    The same shape a playbook has. What Clavia drafts does not land you on
