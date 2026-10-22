@@ -3360,8 +3360,14 @@ function openArtifact(a, { full = false } = {}) {
            there is no conversation here */
         full ? null : vBtn,
         ...(made.extras || []),
-        full || a.kind === 'agent' ? null : editBtn,
-        full ? null : commentLayer(a, shell),
+        /* Docked, the chat it would edit in is already the thing beside
+           it, and the button collapses the panel rather than going
+           anywhere — so where the full-screen toggle is, this is not.
+           A template takes no comments either: it is a document to be
+           used, and what there is to say about it is said in its own
+           conversation. */
+        full || a.kind === 'agent' || a.kind === 'template' ? null : editBtn,
+        full || a.kind === 'template' ? null : commentLayer(a, shell),
         /* a draft carries its own destination at the foot, beside Send —
            where it belongs, since sending and exporting are the same
            decision made two different ways */
