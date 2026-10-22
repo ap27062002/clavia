@@ -883,7 +883,6 @@ function templateList() {
       String(x.used), mxPerson(x.owner), pbWhen(x.updated)],
     open: (x) => mxOpen('templates', x.id),
     menu: (x, row) => [
-      { label: 'Use Template', icon: 'fillin', run: () => mxOpen('templates', x.id + '/use') },
       { label: 'Open', icon: 'files', run: () => mxOpen('templates', x.id) },
       { label: 'Duplicate', icon: 'copy', run: () => {
         const c = structuredClone(x);
@@ -1277,7 +1276,7 @@ function templatePage(t, use = false) {
         word,
         use
           ? h('button', { class: 'btn btn--primary', type: 'button', onclick: draft }, 'Create Draft')
-          : h('button', { class: 'btn btn--primary', type: 'button', onclick: () => mxOpen('templates', t.id + '/use') }, 'Use Template')),
+          : null),
       docScroll));
   paintFields(); paintChips(); paintProg();
   if (!t.name && !use) setTimeout(() => title.focus({ preventScroll: true }), 80);
