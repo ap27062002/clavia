@@ -1077,6 +1077,14 @@ function mxTplDuplicate(t) {
    questions somebody reaches for it with: what is it, what is in it,
    has it been used before, and what do I do now. */
 
+/* The skills that reach for this template — the work it is for, said
+   in that work's own words. Real linkage: a skill lists what it uses. */
+function mxTplUsedIn(t) {
+  let all = [];
+  try { all = (typeof skAll === 'function' ? skAll() : []) || []; } catch { return []; }
+  return all.filter(k => (k.uses || []).some(u => u.kind === 'template' && u.id === t.id));
+}
+
 /* the requests whose paper came off this template */
 function mxTplUses(t) {
   let reqs = [];
@@ -1091,9 +1099,10 @@ function mxTplUses(t) {
 }
 
 function mxTplAbout(t, onHide) {
-  const secs = t.body.filter(b => b.h !== undefined && b.h.trim());
   const uses = mxTplUses(t);
-  const blank = (s) => (s || '').replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => mxFieldLabel(t, k));
+  const work = mxTplUsedIn(t);
+  /* the kinds of request its paper has actually gone out on */
+  const kinds = [...new Set(uses.map(r => r.type).filter(Boolean))].slice(0, 3);
   const line = (label, value) => h('div', { class: 'mx-ab-row' },
     h('span', { class: 'mx-ab-k' }, label), h('span', { class: 'mx-ab-v' }, value));
   return h('aside', { class: 'mx-tpl-about' },
@@ -1109,10 +1118,14 @@ function mxTplAbout(t, onHide) {
       t.description ? h('p', { class: 'mx-ab-p' }, t.description) : null,
 
       h('div', { class: 'mx-ab-sec' },
-        h('h3', { class: 'mx-ab-h' }, `What is in it`),
-        secs.length
-          ? h('ol', { class: 'mx-ab-list' }, ...secs.map(b => h('li', {}, blank(b.h))))
-          : h('p', { class: 'mx-ab-none' }, 'Nothing written in it yet.')),
+        h('h3', { class: 'mx-ab-h' }, 'Where it is generally used'),
+        work.length
+          ? h('ul', { class: 'mx-ab-work' }, ...work.map(k => h('li', {},
+              h('span', { class: 'mx-ab-work-t' }, k.name),
+              k.about ? h('span', { class: 'mx-ab-work-s' }, k.about) : null)))
+          : h('p', { class: 'mx-ab-none' }, `On its own, whenever this kind of ${(t.kind || 'agreement').toLowerCase()} is needed.`),
+        kinds.length ? h('p', { class: 'mx-ab-foot' },
+          `Comes up on ${kinds.join(' and ')} ${kinds.length > 1 ? 'requests' : 'requests'}.`) : null),
 
       h('div', { class: 'mx-ab-sec' },
         h('h3', { class: 'mx-ab-h' }, 'What you will be asked for'),
