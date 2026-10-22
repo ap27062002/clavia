@@ -24,9 +24,11 @@
 const MX = {
   vault:     { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, files: {} },
   /* fold: sections folded on the sheet, outline: sections folded in the
-     outline beside it, sideHidden: the whole panel put away */
+     outline beside it, sideHidden: the whole panel put away on the page,
+     chatSideHidden: the same beside a conversation, where there is less
+     room and the document has it to start with */
   templates: { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, values: {},
-               fold: {}, outline: {}, sideHidden: false },
+               fold: {}, outline: {}, sideHidden: false, chatSideHidden: true },
   requests:  { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } } },
   projects:  { open: null, list: { tab: 'all', find: '', sort: { key: 'updated', dir: -1 } }, items: {} },
   agents:    { open: null },   // 'new', 'build', 'build/done', or an agent's id
@@ -887,6 +889,7 @@ function templateList() {
     open: (x) => mxOpen('templates', x.id),
     menu: (x, row) => [
       { label: 'Open', icon: 'files', run: () => mxOpen('templates', x.id) },
+      { label: 'Edit with Chat', icon: 'rename', run: () => mxTplEditInChat(x) },
       { label: 'Duplicate', icon: 'copy', run: () => {
         const c = structuredClone(x);
         Object.assign(c, { id: pbUid('tpl'), name: (x.name || 'Untitled template') + ' copy', status: 'draft', used: 0, version: 1, owner: USER.name, updated: mxNow() });
@@ -920,11 +923,13 @@ function templateList() {
   }, { keyboard }), true), t.el);
 }
 
-function newTemplate(fields, flash) {
+/* open = false leaves it where it is: built with AI, a template opens in
+   its conversation instead, which is a different place to land */
+function newTemplate(fields, flash, open = true) {
   const t = { id: pbUid('tpl'), status: 'draft', owner: USER.name, updated: mxNow(), used: 0, version: 1, ...fields };
   mxData().templates.unshift(t); save();
   if (flash) MX.flash = t.id;
-  mxOpen('templates', t.id);
+  if (open) mxOpen('templates', t.id);
   return t;
 }
 /* Scripted for now: the nearest template we have, under the name you gave it. */
@@ -937,11 +942,27 @@ function templateFrom(text, name) {
   return { name: clean || seed.name, kind: seed.kind, description: seed.description,
     fields: structuredClone(seed.fields), body: structuredClone(seed.body) };
 }
+/* It says what it is doing while it does it, and what it has made opens in
+   a conversation with the template beside it — the same way a playbook
+   arrives (buildPlaybook in playbooks.js). */
 function buildTemplate(text, files, step) {
   const from = text || files.join(' ');
-  step(files.length ? `Reading ${files[0]}` : 'Working out what the document needs');
-  setTimeout(() => step('Drafting it, and naming the blanks'), 1100);
-  setTimeout(() => { MX.templates.open = null; newTemplate(templateFrom(from, text ? null : files[0]), true); }, 2300);
+  const steps = [
+    files.length ? `Reading ${files.length === 1 ? files[0] : files.length + ' files'}` : 'Reading your description',
+    'Working out the sections it needs',
+    'Drafting it, and naming the blanks',
+  ];
+  let i = 0;
+  const tick = () => {
+    step(steps[i]);
+    if (++i < steps.length) return setTimeout(tick, 800);
+    setTimeout(() => {
+      if (state.view !== 'templates' || MX.templates.open !== 'new') return;   // left while it was writing
+      const t = newTemplate(templateFrom(from, text ? null : files[0]), true, false);
+      mxTplEditInChat(t, mxTplBuiltIntro(t, text, files));
+    }, 800);
+  };
+  tick();
 }
 
 const mxFieldLabel = (t, key) => t.fields.find(f => f.key === key)?.label || key;
@@ -1002,8 +1023,12 @@ function mxReadDeal(t, text) {
 /* Two pages from one: the template itself, where its wording and its blanks
    are written and kept (use = false), and a document being made from it,
    where the blanks are filled by hand, from a document, or from a sentence
-   about the deal (use = true). Only the second has values. */
-function templatePage(t, use = false) {
+   about the deal (use = true). Only the second has values.
+
+   inChat is the same page docked beside its conversation: the way back and
+   the Publish button are the shell's there, so this one does not repeat
+   them. */
+function templatePage(t, use = false, inChat = false) {
   const vals = use ? (MX.templates.values[t.id] ||= {}) : {};
   const filled = () => t.fields.filter(f => vals[f.key]?.trim()).length;
   const prog = h('span', { class: 'mx-fill-n' });
@@ -1937,11 +1962,12 @@ function templatePage(t, use = false) {
      width inside, so it slides out whole instead of being squeezed. */
   /* a draft started from a request goes back to that request */
   const from = use && MX.templates.from?.tpl === t.id ? MX.templates.from : null;
-  const back = use
-    ? h('button', { class: 'mx-back', type: 'button', onclick: () => from ? (MX.templates.open = null, mxOpen('intake', from.id)) : mxOpen('templates', t.id) },
-        h('span', { class: 'mx-back-ar', html: PB_SVG.chev }), from ? from.id : t.name || 'Untitled template')
-    : h('button', { class: 'mx-back', type: 'button', onclick: () => { mxClose('templates'); go('templates'); } },
-        h('span', { class: 'mx-back-ar', html: PB_SVG.chev }), 'Templates');
+  const back = inChat ? null
+    : use
+      ? h('button', { class: 'mx-back', type: 'button', onclick: () => from ? (MX.templates.open = null, mxOpen('intake', from.id)) : mxOpen('templates', t.id) },
+          h('span', { class: 'mx-back-ar', html: PB_SVG.chev }), from ? from.id : t.name || 'Untitled template')
+      : h('button', { class: 'mx-back', type: 'button', onclick: () => { mxClose('templates'); go('templates'); } },
+          h('span', { class: 'mx-back-ar', html: PB_SVG.chev }), 'Templates');
   const hideBtn = h('button', { class: 'pbv-icon', type: 'button', 'aria-label': 'Hide the outline',
     'data-tip': 'Hide Outline', html: PBV_PANEL, onclick: () => showSide(false) });
   const outlineBlock = h('div', { class: 'mx-tpl-out' },
@@ -1961,7 +1987,9 @@ function templatePage(t, use = false) {
     use ? fillAsk() : null,
     ...(use ? [fieldsBlock, outlineBlock] : [outlineBlock, fieldsBlock]));
 
-  const SIDE_W = { min: 240, max: 480, base: 320 };
+  /* beside a conversation there is far less room, so the panel starts
+     narrower there and the document keeps the rest */
+  const SIDE_W = inChat ? { min: 190, max: 380, base: 230 } : { min: 240, max: 480, base: 320 };
   const setSideW = (w) => {
     const v = Math.round(Math.max(SIDE_W.min, Math.min(SIDE_W.max, w)));
     page.style.setProperty('--mx-side-w', v + 'px');
@@ -1974,12 +2002,13 @@ function templatePage(t, use = false) {
     'aria-orientation': 'vertical', 'aria-label': 'Resize the outline',
     'aria-valuemin': String(SIDE_W.min), 'aria-valuemax': String(SIDE_W.max),
     title: 'Drag to resize · double-click to reset',
-    ondblclick: () => { state.mxSideW = setSideW(SIDE_W.base); save(); },
+    ondblclick: () => { const w = setSideW(SIDE_W.base); if (!inChat) { state.mxSideW = w; save(); } },
     onkeydown: (e) => {
       const step = e.key === 'ArrowLeft' ? -16 : e.key === 'ArrowRight' ? 16 : 0;
       if (!step) return;
       e.preventDefault();
-      state.mxSideW = setSideW((state.mxSideW || SIDE_W.base) + step); save();
+      const w = setSideW(side.getBoundingClientRect().width + step);
+      if (!inChat) { state.mxSideW = w; save(); }
     },
     onpointerdown: (e) => {
       if (e.button !== 0) return;
@@ -1993,19 +2022,21 @@ function templatePage(t, use = false) {
         removeEventListener('pointerup', up);
         removeEventListener('pointercancel', up);
         page.classList.remove('is-resizing');
-        state.mxSideW = w; save();
+        if (!inChat) { state.mxSideW = w; save(); }
       };
       addEventListener('pointermove', move);
       addEventListener('pointerup', up);
       addEventListener('pointercancel', up);
     } });
+  const sideHidden = () => inChat ? MX.templates.chatSideHidden : MX.templates.sideHidden;
   function showSide(on) {
-    MX.templates.sideHidden = !on;
+    if (inChat) MX.templates.chatSideHidden = !on; else MX.templates.sideHidden = !on;
     side.inert = !on;
     page.classList.toggle('is-side-hidden', !on);
   }
 
-  const page = h('div', { class: 'mx-tpl' + (use ? ' is-use' : '') + (MX.templates.sideHidden ? ' is-side-hidden' : '') },
+  const page = h('div', { class: 'mx-tpl' + (use ? ' is-use' : '') + (inChat ? ' is-in-chat' : '')
+      + (sideHidden() ? ' is-side-hidden' : '') },
     h('div', { class: 'mx-tpl-side-wrap' }, side),
     h('div', { class: 'mx-tpl-main' },
       h('div', { class: 'mx-tpl-bar' },
@@ -2013,11 +2044,13 @@ function templatePage(t, use = false) {
         use
           ? h('span', { class: 'mx-tpl-kind' }, h('span', { class: 'mx-tpl-new' }, `New ${t.name || 'document'}`),
               h('span', { class: 'mx-dot' }, 'from the template'))
+          /* beside a chat the bar is half as wide, so how often it has been
+             used — the least pressing of the four — stays on the page */
           : h('span', { class: 'mx-tpl-kind' }, pbStatus(t.status), h('span', { class: 'mx-dot' }, t.kind),
               h('span', { class: 'mx-dot' }, 'v' + mxTplVer(t)),
-              h('span', { class: 'mx-dot' }, `Used ${mxPlural(t.used, 'time')}`)),
+              inChat ? null : h('span', { class: 'mx-dot' }, `Used ${mxPlural(t.used, 'time')}`)),
         h('span', { class: 'pb-grow' }),
-        !use && t.status === 'draft' ? h('button', { class: 'btn', type: 'button',
+        !use && !inChat && t.status === 'draft' ? h('button', { class: 'btn', type: 'button',
           onclick: () => { t.status = 'live'; t.updated = mxNow(); save(); go('templates'); pbToast(`“${t.name || 'Untitled template'}” is published`); } }, 'Publish') : null,
         h('button', { class: 'btn mx-word', type: 'button', onclick: toWord },
           h('img', { src: 'assets/brand/word.svg', alt: '', 'aria-hidden': 'true' }), 'Open in Word'),
@@ -2026,8 +2059,8 @@ function templatePage(t, use = false) {
           : null),
       docScroll),
     resize);
-  side.inert = !!MX.templates.sideHidden;
-  setSideW(state.mxSideW || SIDE_W.base);
+  side.inert = sideHidden();
+  setSideW(inChat ? SIDE_W.base : (state.mxSideW || SIDE_W.base));
 
   /* `/` anywhere on the page (but not while typing) starts a search */
   const slash = (e) => {
@@ -2045,6 +2078,194 @@ function templatePage(t, use = false) {
   if (!t.name && !use) setTimeout(() => title.focus({ preventScroll: true }), 80);
   return page;
 }
+
+/* ══ A template as an artifact, and the conversation about it ══════
+   The same shape a playbook has. What Clavia drafts does not land you on
+   a page on your own: it opens in a conversation with the template
+   itself beside it, so the first thing you do with a new template is
+   read it and say what to change. (playbook-view.js does this for
+   playbooks; this is the same thing for templates.) */
+
+const MX_TPL_SES = {};
+const mxTplArtId = (t) => 'template-' + t.id;
+
+function mxTplArtifact(t) {
+  const id = mxTplArtId(t);
+  let a = ARTIFACTS[id];
+  if (!a) {
+    a = ARTIFACTS[id] = {
+      id, kind: 'template', tplId: t.id, ext: 'template',
+      /* the name in the header is the template's own name, so renaming it
+         in either place renames it in both */
+      get name() { return mxTemplate(this.tplId)?.name || 'Untitled template'; },
+      set name(v) { const x = mxTemplate(this.tplId); if (x) { x.name = v; x.updated = mxNow(); save(); } },
+      session: () => mxTplSession(mxTemplate(a.tplId)),
+      onPublish: (btn, repaint) => mxTplPublishPop(mxTemplate(a.tplId), btn, repaint),
+      pubInfo: () => mxTplPubInfo(mxTemplate(a.tplId)),
+      onDelete: () => {
+        const x = mxTemplate(a.tplId), d = mxData();
+        closeArtifact?.();
+        if (!x) return;
+        d.templates.splice(d.templates.indexOf(x), 1); save();
+        delete ARTIFACTS[id]; delete MX_TPL_SES['tpl-ses-' + x.id];
+        go('templates');
+        pbToast(`Deleted “${x.name || 'Untitled template'}”`);
+      },
+    };
+  }
+  return a;
+}
+function mxTplArtifactById(id) {
+  const m = /^template-(.+)$/.exec(id);
+  const t = m && mxTemplate(m[1]);
+  return t ? mxTplArtifact(t) : null;
+}
+
+/* published, a template is the one drafts are made from */
+function mxTplPubInfo(t) {
+  if (!t) return { state: 'off', label: 'Publish', title: '' };
+  return t.status === 'live'
+    ? { state: 'live', label: 'Published', title: `v${mxTplVer(t)} is the version drafts are made from` }
+    : { state: 'off', label: 'Publish', title: 'Publish this template so drafts can be made from it' };
+}
+
+function mxTplPublishPop(t, anchor, repaint) {
+  if (!t) return;
+  if (openMenu && openMenu.dataset.for === 'mx-tpl-pub') return closeMenu();
+  closeMenu();
+  const v = 'v' + mxTplVer(t);
+  const live = t.status === 'live';
+  const el = h('div', { class: 'menu pb-pub', role: 'dialog', 'data-for': 'mx-tpl-pub', 'aria-label': 'Publish' },
+    h('div', { class: 'pb-pub-t' }, live ? `${v} is published` : `Publish ${v}`),
+    h('p', { class: 'pb-pub-p' }, live
+      ? 'Every new draft is made from this version. Change it here and publish again when it is ready.'
+      : `Drafts are made from ${v} as soon as it is published. Until then it is yours alone.`),
+    h('div', { class: 'pb-pub-acts' },
+      live
+        ? h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => {
+            closeMenu(); t.status = 'draft'; t.updated = mxNow(); save();
+            repaint(); pbToast('Unpublished. No new drafts will be made from it.');
+          } }, 'Unpublish')
+        : h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => closeMenu() }, 'Cancel'),
+      live ? null : h('button', { class: 'btn btn--primary', type: 'button', onclick: () => {
+        closeMenu(); t.status = 'live'; t.updated = mxNow(); save();
+        repaint(); pbToast(`${v} is published.`);
+      } }, `Publish ${v}`)));
+  document.body.append(el);
+  openMenu = el;
+  const r = anchor.getBoundingClientRect();
+  el.style.top = (r.bottom + 8) + 'px';
+  el.style.left = Math.max(12, Math.min(r.right - el.offsetWidth, innerWidth - el.offsetWidth - 12)) + 'px';
+  el.classList.add('opening');
+  el.addEventListener('click', e => e.stopPropagation());
+}
+
+/* how many sections there are, counted the way the page counts them */
+const mxTplSecs = (t) => t.body.filter(b => b.h !== undefined && b.h.trim()).length;
+const mxTplSummary = (t) => `${t.name || 'This template'} — ${mxPlural(mxTplSecs(t), 'section')}, `
+  + `with ${mxPlural(t.fields.length, 'blank')} to fill.`;
+
+/* what a template of this kind usually has and this one does not */
+const MX_TPL_WANTED = [
+  [/governing law|jurisdiction/i, 'Governing law'],
+  [/confidential/i, 'Confidentiality'],
+  [/terminat/i, 'Termination'],
+  [/liabilit/i, 'Limitation of liability'],
+  [/notice/i, 'Notices'],
+];
+function mxTplSuggest(t) {
+  const hay = t.body.map(b => b.h ?? b.p).join(' ');
+  const out = [];
+  const want = MX_TPL_WANTED.find(([re]) => !re.test(hay));
+  if (want) out.push(`Add a section on ${want[1]}`);
+  const sec = t.body.find(b => b.h !== undefined && b.h.trim());
+  if (sec) out.push(`Make ${sec.h.trim()} shorter and plainer`);
+  out.push(t.fields.some(f => /(^|_)date$/.test(f.key))
+    ? 'Give every blank an example value'
+    : 'Add a blank for the effective date');
+  return out.slice(0, 3);
+}
+
+/* the conversation a new template arrives in: what was read, what was
+   made, and that it is a draft until you say otherwise */
+function mxTplBuiltIntro(t, text, files) {
+  return [
+    { role: 'user', text: text || `Make a template from ${files.join(', ')}.`,
+      files: files.length ? files.map(name => ({ name })) : null },
+    { role: 'bot', cites: null,
+      answer: `Drafted ${t.name || 'the template'} — ${mxPlural(mxTplSecs(t), 'section')}, `
+        + `with ${mxPlural(t.fields.length, 'blank')} named and ready to fill.\n\n`
+        + 'It is a draft: read it before you publish it. Tell me what to add, cut or word '
+        + 'differently, and I will change it as a new version.',
+      steps: [
+        files.length
+          ? { source: 'internal', query: `Read ${files.length === 1 ? 'the file you gave it' : 'the files you gave it'}`,
+              rows: files.map(name => ({ title: name, meta: 'reference' })) }
+          : { source: 'think', query: 'Read what the document is for' },
+        { source: 'template', query: `Drafted ${mxPlural(mxTplSecs(t), 'section')}`, count: 'v' + mxTplVer(t) },
+      ],
+      suggest: mxTplSuggest(t) },
+  ];
+}
+
+function mxTplSession(t, intro) {
+  if (!t) return null;
+  const id = 'tpl-ses-' + t.id;
+  if (MX_TPL_SES[id] && !intro) return MX_TPL_SES[id];
+  const a = mxTplArtifact(t);
+  MX_TPL_SES[id] = {
+    id, artifact: a.id, label: t.name || 'Untitled template', meta: 'now',
+    people: [{ name: USER.name, online: true, owner: true }],
+    messages: intro || [
+      { role: 'user', text: `Let's work on the ${t.name || 'untitled'} template.` },
+      { role: 'bot', answer: mxTplSummary(t), cites: null,
+        steps: [{ source: 'template', query: 'Read ' + (t.name || 'the template'),
+          count: mxPlural(t.fields.length, 'blank') }],
+        suggest: mxTplSuggest(t) },
+    ],
+  };
+  return MX_TPL_SES[id];
+}
+/* a template's conversation is made when it is first opened, so a link to
+   it makes it again */
+function mxTplSessionRoute(id) {
+  const m = /^tpl-ses-(.+)$/.exec(id);
+  const t = m && mxTemplate(m[1]);
+  if (!t) return false;
+  mxTplEditInChat(t);
+  return true;
+}
+function mxTplEditInChat(t, intro) {
+  MX.templates.open = null;
+  openSession(mxTplSession(t, intro));
+  queueMicrotask(() => openArtifact(mxTplArtifact(t)));
+}
+
+/* ── registering the kind ─────────────────────────────────────── */
+RENDER.template = (a) => {
+  const t = mxTemplate(a.tplId);
+  if (!t) return { body: h('div', { class: 'pbv-gone' }, 'This template has been deleted.') };
+  return {
+    body: templatePage(t, false, true),
+    /* opened from the list, the way out is back to it; beside a chat, the
+       template keeps its mark and the panel's own close */
+    lead: [state.view === 'templates'
+      ? h('button', { class: 'pbv-back', type: 'button', 'aria-label': 'Back to Templates', 'data-tip': 'Back to Templates',
+          html: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" '
+            + 'stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>',
+          onclick: () => { closeArtifact?.(); if (state.view !== 'templates') go('templates'); } })
+      : h('span', { class: 'pbv-kind', 'aria-hidden': 'true', html: kindMark('template') })],
+  };
+};
+/* A template, drawn as it is in the Templates list: a sheet of paper with
+   a blank ruled into it. */
+KIND_ICON.template =
+    '<rect x="4.6" y="1.9" width="14.8" height="20.2" rx="2.6" fill="#FCFCFB" stroke="#D8D3CC" stroke-width="1"/>'
+  + '<path d="M7.8 7.1h8.4M7.8 13.3h8.4" stroke="#DDD8D1" stroke-width="1" stroke-linecap="round"/>'
+  + '<path d="M7.8 10.2h4.4" stroke="#B9AF9C" stroke-width="1" stroke-linecap="round" stroke-dasharray="1.6 1.4"/>';
+KIND_LABEL.template = 'Template';
+KIND_SHORT.template = 'TEMPLATE';
+NOUN.template = 'template';
 
 /* what the trace says it read, for the steps these modules add */
 SOURCES.template = { label: 'the template', verb: 'Used',

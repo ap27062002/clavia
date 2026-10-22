@@ -231,6 +231,19 @@
 /* ================================================================
    Templates — the fields down the side, the document beside them
 ================================================================ */
+/* docked beside its conversation, the page is the panel's whole height
+   and scrolls inside itself, as a playbook does there */
+.artifact-shell > .mx-tpl { min-height: 0; overflow: hidden; animation: none; }
+.mx-tpl.is-in-chat .mx-tpl-side { padding: 14px 12px 32px 16px; }
+/* the document has a column, not a page, so it gives its margins back */
+.mx-tpl.is-in-chat .mx-tpl-doc { padding: 4px 14px 56px; }
+.mx-tpl.is-in-chat.is-side-hidden .mx-tpl-doc { padding-left: 30px; padding-right: 30px; }
+.mx-tpl.is-in-chat .mx-doc-in { padding: 26px 30px 44px; }
+.mx-tpl.is-in-chat .mx-doc-bar { padding: 0 20px 0 30px; }
+.mx-tpl.is-in-chat .mx-doc-bar .pbv-bar-ctx { padding: 0 20px 0 30px; }
+.mx-tpl.is-in-chat .mx-doc-title { font-size: 24px !important; }
+.mx-tpl.is-in-chat .mx-blk-n, .mx-tpl.is-in-chat .mx-blk-del { display: none; }
+
 .mx-tpl {
   position: relative;
   flex: 1; min-height: 0;
@@ -359,7 +372,7 @@
 .mx-sec[hidden], .mx-blk[hidden] { display: none; }
 .mx-sec-head { position: relative; display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; }
 .mx-sec-n { flex: none; font-family: var(--serif); font-size: 19px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
-.mx-sec-head .mx-doc-h { flex: 0 1 auto; min-width: 0; margin: 0 auto 0 0; }
+.mx-sec-head .mx-doc-h { flex: 1 1 auto; min-width: 6ch; margin: 0 auto 0 0; overflow-wrap: break-word; }
 .mx-sec-head .pbv-icon { align-self: center; }
 .mx-sec-fold { order: 3; margin: 0 6px 0 0; }
 .mx-sec-fold svg { width: 13px; height: 13px; transform: rotate(90deg); transition: transform 240ms var(--pb-open); }

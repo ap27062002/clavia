@@ -1944,15 +1944,17 @@ function openByHash(hash) {
   const art = /^artifact\/(.+)$/.exec(hash);
   if (art) {
     const aid = decodeURIComponent(art[1]);
-    const a = ARTIFACTS[aid] || (typeof pbArtifactById === 'function' ? pbArtifactById(aid) : null);
+    const a = ARTIFACTS[aid]
+      || (typeof pbArtifactById === 'function' ? pbArtifactById(aid) : null)
+      || (typeof mxTplArtifactById === 'function' ? mxTplArtifactById(aid) : null);
     /* the link named an artifact and there is none — that is the 404,
        arrived at the way it actually happens */
     if (!a) { go('artifacts'); notFound(); return true; }
     if (hashArtifact === a.id) return true;   // go() rewrote the hash; not a new request
     hashArtifact = a.id;
-    /* a playbook lives in Playbooks, so that is what sits behind it and
-       what closing it comes back to */
-    go(a.kind === 'playbook' ? 'playbooks' : 'artifacts');
+    /* a playbook lives in Playbooks and a template in Templates, so that is
+       what sits behind it and what closing it comes back to */
+    go(a.kind === 'playbook' ? 'playbooks' : a.kind === 'template' ? 'templates' : 'artifacts');
     /* the address of an artifact opens the artifact, not the library with
        something docked beside it — a link somebody sends you should land
        on the thing itself */
@@ -1973,6 +1975,7 @@ function openByHash(hash) {
   /* a playbook's conversation is made when it is first opened, so a link
      to it makes it again */
   if (typeof pbSessionRoute === 'function' && pbSessionRoute(id)) return true;
+  if (typeof mxTplSessionRoute === 'function' && mxTplSessionRoute(id)) return true;
   return false;
 }
 
