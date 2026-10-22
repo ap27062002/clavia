@@ -1337,8 +1337,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
           onclick: () => foldSection(sec, !sec.classList.contains('is-folded')) }),
         editable && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-del', type: 'button', 'aria-label': 'Delete section',
           'data-tip': 'Delete Section', html: PBV_TRASH, onclick: () => deleteSection(groupOf(sec.dataset.id)) }),
-        editable && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-blank', type: 'button', 'aria-label': 'Add a blank',
-          'data-tip': 'Add Blank', html: MX_ADD_BLANK, onclick: () => addField() }),
         editable && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-add', type: 'button', 'aria-label': 'Add a paragraph to this section',
           'data-tip': 'Add Paragraph', onclick: () => addParagraph(groupOf(sec.dataset.id)) }, icon('plus', 'ico ico-14'))),
       h('div', { class: 'mx-sec-wrap' }, body));
@@ -1726,40 +1724,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
   };
   const fieldsEl = h('div', { class: 'mx-fs' });
   const paintFields = () => fieldsEl.replaceChildren(...t.fields.map(fieldRow));
-  /* A new blank goes where the caret last was. Select words first and it
-     takes their place and their name, which is how one is usually made:
-     the word “Customer” in the sentence becomes the blank Customer. */
-  const blockAt = (node) => (node?.nodeType === 1 ? node : node?.parentElement)?.closest('.mx-doc-h, .mx-doc-p') || null;
-  const addField = () => {
-    const at = last && sheet.contains(last.startContainer) ? blockAt(last.startContainer) : null;
-    const picked = at && !last.collapsed ? last.toString().replace(/\s+/g, ' ').trim().slice(0, 40) : '';
-    const label = picked || 'New field';
-    let key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'field';
-    if (/^\d/.test(key)) key = 'f_' + key;
-    for (let n = 2, base = key; t.fields.some(f => f.key === key); ) key = base + '_' + n++;
-    const f = { key, label, hint: '' };
-    t.fields.push(f);
-    const c = chip(key);
-    if (at) {
-      if (last.collapsed) last.collapse(false); else last.deleteContents();
-      last.insertNode(c);
-    } else {
-      /* nowhere in particular: the end of the last paragraph, and if there
-         is not one yet, a paragraph made for it */
-      if (!docBody.querySelector('.mx-doc-p')) addParagraph(groups()[groups().length - 1]);
-      [...docBody.querySelectorAll('.mx-doc-p')].pop()?.append(' ', c);
-    }
-    /* the chip is contenteditable="false" and so answers closest() itself:
-       the block to read back is its parent's, not its own */
-    const el = c.parentElement?.closest('.mx-doc-h, .mx-doc-p');
-    if (el?.__b) el.__b[el.tagName === 'H2' ? 'h' : 'p'] = read(el);
-    last = null;
-    t.updated = mxNow(); save(); paintFields(); paintChips(); paintProg(); paintIdx();
-    const name = fieldsEl.querySelector('.mx-f:last-child .mx-f-l');
-    if (name) { name.focus(); name.select(); }
-    else c.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  };
-
   /* values arrive one after another, so you can see where each one went */
   const putVals = (got) => {
     let n = 0;
@@ -2139,8 +2103,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
               h('span', { class: 'mx-dot' }, 'v' + mxTplVer(t)),
               h('span', { class: 'mx-dot' }, `Used ${mxPlural(t.used, 'time')}`)),
         h('span', { class: 'pb-grow' }),
-        !use && t.status === 'draft' ? h('button', { class: 'btn', type: 'button',
-          onclick: () => { t.status = 'live'; t.updated = mxNow(); save(); go('templates'); pbToast(`“${t.name || 'Untitled template'}” is published`); } }, 'Publish') : null,
         use
           ? h('button', { class: 'btn btn--primary', type: 'button', onclick: draft }, 'Create Draft')
           : null),
@@ -2166,11 +2128,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
   if (!t.name && !use) setTimeout(() => title.focus({ preventScroll: true }), 80);
   return page;
 }
-
-/* a blank, as it reads in the document: a word on a dotted rule */
-const MX_ADD_BLANK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" '
-  + 'stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11"/>'
-  + '<path d="M2.5 11.8h11" stroke-dasharray="1.8 1.6"/><path d="M4.6 8.6h4.2"/></svg>';
 
 /* ══ A template as an artifact, and the conversation about it ══════
    The same shape a playbook has. What Clavia drafts does not land you on
@@ -2217,6 +2174,9 @@ function mxTplEnsureVersions(t) {
     });
   }
   t.version = V;
+  /* which one is out: a draft has none, and one that shipped live was
+     published at the version it is on */
+  if (t.published == null) t.published = t.status === 'draft' ? null : V - 1;
   return t;
 }
 
@@ -2291,34 +2251,48 @@ function mxTplArtifactById(id) {
   return mxTplArtifact(t);
 }
 
-/* published, a template is the one drafts are made from */
+/* Published, a template is the one drafts are made from — but only the
+   version that was published. Change it and it is a draft again above a
+   published past, which is what the button has to say. */
 function mxTplPubInfo(t) {
   if (!t) return { state: 'off', label: 'Publish', title: '' };
-  return t.status === 'live'
-    ? { state: 'live', label: 'Published', title: `v${mxTplVer(t)} is the version drafts are made from` }
-    : { state: 'off', label: 'Publish', title: 'Publish this template so drafts can be made from it' };
+  mxTplEnsureVersions(t);
+  const last = t.versions.length - 1;
+  if (t.status === 'live' && t.published === last) {
+    return { state: 'live', label: 'Published', title: `v${last + 1} is the version drafts are made from` };
+  }
+  if (t.status === 'live' && t.published != null) {
+    return { state: 'stale', label: 'Publish',
+      title: `v${last + 1} has changes — v${t.published + 1} is the one drafts are made from` };
+  }
+  return { state: 'off', label: 'Publish', title: 'Publish this template so drafts can be made from it' };
 }
 
 function mxTplPublishPop(t, anchor, repaint) {
   if (!t) return;
   if (openMenu && openMenu.dataset.for === 'mx-tpl-pub') return closeMenu();
   closeMenu();
-  const v = 'v' + mxTplVer(t);
-  const live = t.status === 'live';
+  mxTplEnsureVersions(t);
+  const last = t.versions.length - 1;
+  const v = 'v' + (last + 1);
+  const already = t.status === 'live' && t.published === last;
+  const prev = t.published != null && t.published !== last ? 'v' + (t.published + 1) : null;
   const el = h('div', { class: 'menu pb-pub', role: 'dialog', 'data-for': 'mx-tpl-pub', 'aria-label': 'Publish' },
-    h('div', { class: 'pb-pub-t' }, live ? `${v} is published` : `Publish ${v}`),
-    h('p', { class: 'pb-pub-p' }, live
+    h('div', { class: 'pb-pub-t' }, already ? `${v} is published` : `Publish ${v}`),
+    h('p', { class: 'pb-pub-p' }, already
       ? 'Every new draft is made from this version. Change it here and publish again when it is ready.'
-      : `Drafts are made from ${v} as soon as it is published. Until then it is yours alone.`),
+      : prev
+        ? `Drafts are made from ${prev} today. ${v} replaces it for every new draft; ${prev} stays in the history.`
+        : `Drafts are made from ${v} as soon as it is published. Until then it is yours alone.`),
     h('div', { class: 'pb-pub-acts' },
-      live
+      already
         ? h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => {
-            closeMenu(); t.status = 'draft'; t.updated = mxNow(); save();
+            closeMenu(); t.status = 'draft'; t.published = null; t.updated = mxNow(); save();
             repaint(); pbToast('Unpublished. No new drafts will be made from it.');
           } }, 'Unpublish')
         : h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => closeMenu() }, 'Cancel'),
-      live ? null : h('button', { class: 'btn btn--primary', type: 'button', onclick: () => {
-        closeMenu(); t.status = 'live'; t.updated = mxNow(); save();
+      already ? null : h('button', { class: 'btn btn--primary', type: 'button', onclick: () => {
+        closeMenu(); t.status = 'live'; t.published = last; t.updated = mxNow(); save();
         repaint(); pbToast(`${v} is published.`);
       } }, `Publish ${v}`)));
   document.body.append(el);
