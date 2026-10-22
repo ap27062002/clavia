@@ -410,7 +410,8 @@
 .mx-tpl-bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 14px 26px 14px 30px; }
 .mx-tpl-kind { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-soft); }
 .mx-tpl-bar .btn { padding: 7px 13px; }
-.mx-tpl-doc { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 30px 72px; }
+.mx-tpl { --mx-doc-top: 4px; }
+.mx-tpl-doc { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mx-doc-top) 30px 72px; }
 /* and the sheet keeps clear of the way-back button when the panel is away */
 .mx-tpl.is-side-hidden .mx-tpl-doc { padding-left: 46px; padding-right: 46px; }
 /* the document: a sheet, in the playbook sheet's type */
@@ -423,7 +424,10 @@
    Slim, and its tools end where the text below ends. Once the page is
    moving under it, it casts one soft shadow from its own edge. */
 .mx-doc-bar {
-  position: sticky; top: -4px; z-index: 2;
+  /* pinned exactly where the sheet starts: the scroller's own top
+     padding, negated. Anything else and the document scrolls into the
+     gap between the two and reads through the bar. */
+  position: sticky; top: calc(var(--mx-doc-top, 4px) * -1); z-index: 2;
   display: flex; align-items: center; gap: 8px;
   /* Both columns of ink end where the text ends. The bar's glyphs sit in
      a 30px box and a section's chevron in a 26px one, so each is pulled

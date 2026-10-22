@@ -3856,11 +3856,16 @@ function answer(prompt, files = []) {
      carries a skill runs it (skills.js) */
   if (thread?.id?.startsWith('sk-ses-') && typeof skBuildTurn === 'function') return skBuildTurn(ARTIFACTS[thread.id.slice(7)], prompt);
   if (typeof skillAnswer === 'function' && skillAnswer(prompt)) return;
+  /* A conversation about a template is asked about that template, with
+     whatever was handed over in the box. Read off the conversation's own
+     name rather than the last artifact somebody mentioned in it: a
+     template drafted here has messages of its own that carry no artifact,
+     and the ask would otherwise fall through to building something. */
+  const onTpl = thread?.id?.startsWith('tpl-ses-') ? ARTIFACTS['template-' + thread.id.slice(8)] : null;
+  if (onTpl && typeof templateTurn === 'function') return templateTurn(onTpl, prompt, files);
   /* a conversation working on a playbook is asked about that playbook */
   const onPb = ARTIFACTS[lastArtifactIn()];
   if (onPb?.kind === 'playbook' && typeof playbookTurn === 'function') return playbookTurn(onPb, prompt);
-  /* and one working on a template is asked about that template — with
-     whatever was handed over in the box */
   if (onPb?.kind === 'template' && typeof templateTurn === 'function') return templateTurn(onPb, prompt, files);
   /* a conversation building a request answers as the request */
   const onRq = thread?.id?.startsWith('rq-ses-') ? ARTIFACTS[thread.id.slice(7)] : null;

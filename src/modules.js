@@ -1145,7 +1145,7 @@ function mxTplAbout(t, onHide) {
 
       h('button', { class: 'btn btn--primary mx-ab-go', type: 'button',
         onclick: () => { closeArtifact?.(); requestForm({ templates: [t.id], how: 'template' }); } },
-        'Start intake'),
+        'Initiate request'),
       h('p', { class: 'mx-ab-note' }, 'Legal picks it up from there — you will be asked who it is with and the few things only you know.')));
 }
 
@@ -2439,6 +2439,7 @@ function mxTplBuiltIntro(t, text, files, asked = []) {
           : '')
         + 'It is a draft: read it before you publish it. Tell me what to add, cut or word '
         + 'differently, and I will change it as a new version.',
+      artifact: mxTplArtId(t),
       steps: [
         files.length
           ? { source: 'internal', query: `Read ${files.length === 1 ? 'the file you gave it' : 'the files you gave it'}`,
