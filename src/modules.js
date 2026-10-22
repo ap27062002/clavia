@@ -1124,6 +1124,7 @@ function mxTplAbout(t, onHide) {
     h('div', { class: 'mx-ab' },
       h('h2', { class: 'mx-ab-name' }, t.name || 'Untitled template'),
       line('Type', t.kind || 'Agreement'),
+      line('Written', mxSetLabel(t, 'stance')),
       line('Status', t.status === 'live' ? 'Published — ready to use' : 'A draft, not published yet'),
       t.description ? h('p', { class: 'mx-ab-p' }, t.description) : null,
 
@@ -1166,18 +1167,30 @@ function mxTplAbout(t, onHide) {
       h('p', { class: 'mx-ab-note' }, 'Legal picks it up from there — you will be asked who it is with and the few things only you know.')));
 }
 
+/* what goes either side of a blank, in the file as on the page. The
+   third slot says the name is underlined rather than bracketed. */
+const MX_BLANK_MARK = { square: ['[', ']'], angle: ['<', '>'], curly: ['{', '}'], rule: ['', '', true] };
+
 /* ── Open in Word ─────────────────────────────────────────────
  The template as it stands, filled where it is filled, set the way it
  is set on the page, as a file Word opens. It is reached from the
  list: nothing stands over the document itself. */
 function mxTplToWord(t, vals = {}) {
   const esc = (x) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const txt = (x) => esc(x).replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => esc(vals[k]?.trim() || `[${mxFieldLabel(t, k)}]`));
+  /* a blank is written the way it is marked on the page */
+  const mark = MX_BLANK_MARK[mxSet(t, 'blanks')] || MX_BLANK_MARK.square;
+  /* the marks are escaped too: an angle bracket written raw into the
+     file is a tag Word throws away, blank and all */
+  const txt = (x) => esc(x).replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => vals[k]?.trim()
+    ? esc(vals[k].trim())
+    : esc(mark[0]) + (mark[2] ? `<u>${esc(mxFieldLabel(t, k))}</u>` : esc(mxFieldLabel(t, k))) + esc(mark[1]));
   const layout = mxSet(t, 'layout'), pt = mxSet(t, 'size');
   const face = { times: "'Times New Roman',serif", arial: 'Arial,sans-serif', calibri: 'Calibri,sans-serif' }[mxSet(t, 'face')];
-  const paper = { a4: '21cm 29.7cm', letter: '8.5in 11in', a3: '29.7cm 42cm' }[mxSet(t, 'page')];
-  const style = `@page{size:${paper};margin:2.54cm}`
-    + `body{font-family:${face};font-size:${pt}pt;line-height:1.5${layout === 'legal' ? ';text-align:justify' : ''}}`
+  /* paper is no longer asked, so it is A4 — what most of the world prints on */
+  const cols = mxSet(t, 'columns') === 'two' ? 'column-count:2;column-gap:1cm;' : '';
+  const style = `@page{size:21cm 29.7cm;margin:2.54cm}`
+    + `body{font-family:${face};font-size:${pt}pt;line-height:1.5;${cols}`
+    + `${layout === 'legal' ? 'text-align:justify' : ''}}`
     + (layout === 'legal'
       ? `h1{font-size:${+pt + 1}pt;font-weight:bold;text-align:center;text-transform:uppercase;margin:0 0 22pt}`
         + `h2{font-size:${pt}pt;font-weight:bold;margin:16pt 0 8pt}p{margin:0 0 8pt}`
@@ -1208,6 +1221,15 @@ function mxTplToWord(t, vals = {}) {
    it is set in. A template keeps all of them; everything shipped
    predates the question and takes the defaults. */
 const MX_SET = {
+  /* First, because it decides what is written rather than how it looks,
+     and because somebody who is not a lawyer knows the answer. */
+  stance: {
+    label: 'Position', def: 'standard', ask: 'How should the wording be framed?',
+    options: [
+      { key: 'firm', label: 'Company favourable', desc: 'Our positions held, little given away. Expect it to be negotiated.' },
+      { key: 'standard', label: 'Market standard', desc: 'What both sides usually settle on. Signs fastest.' },
+      { key: 'light', label: 'Easy to sign', desc: 'Short and even-handed, for small deals that are not worth arguing over.' },
+    ] },
   layout: {
     label: 'Layout', def: 'headed', ask: 'How should the document be laid out?',
     options: [
@@ -1215,12 +1237,19 @@ const MX_SET = {
       { key: 'headed', label: 'Headed sections', desc: 'A heading over each section, text ranged left.' },
       { key: 'letter', label: 'Plain letter', desc: 'No headings — one paragraph after another, as a notice is written.' },
     ] },
-  page: {
-    label: 'Paper', def: 'a4', ask: 'What paper is it for?',
+  columns: {
+    label: 'Columns', def: 'one', ask: 'One column or two?',
     options: [
-      { key: 'a4', label: 'A4', desc: '210 × 297mm. The rest of the world.' },
-      { key: 'letter', label: 'US Letter', desc: '8.5 × 11in. North America.' },
-      { key: 'a3', label: 'A3', desc: '297 × 420mm. For schedules that will not fit.' },
+      { key: 'one', label: 'One column', desc: 'The full width of the page. What nearly every agreement uses.' },
+      { key: 'two', label: 'Two columns', desc: 'Half the width, twice the page. Fits more on, harder to redline.' },
+    ] },
+  blanks: {
+    label: 'Blanks', def: 'square', ask: 'How should the blanks be marked?',
+    options: [
+      { key: 'square', label: '[Square brackets]', desc: 'The usual mark for something still to be filled in.' },
+      { key: 'angle', label: '<Angle brackets>', desc: 'Reads as a field rather than as drafting left open.' },
+      { key: 'curly', label: '{Curly braces}', desc: 'What a mail merge expects to find.' },
+      { key: 'rule', label: 'A ruled line', desc: 'A line to write on, for anything printed and signed by hand.' },
     ] },
   face: {
     label: 'Typeface', def: 'times', ask: 'What should it be set in?',
@@ -1243,9 +1272,9 @@ const mxSet = (t, k) => {
 };
 const mxSetLabel = (t, k) => MX_SET[k].options.find(o => o.key === mxSet(t, k)).label;
 const mxSetClasses = (t) => MX_SET_KEYS.map(k => ` is-${k}-${mxSet(t, k)}`).join('');
-/* how it reads in a sentence: "numbered clauses on A4, Times New Roman 11 pt" */
-const mxSetSays = (t) => `${mxSetLabel(t, 'layout').toLowerCase()} on ${mxSetLabel(t, 'page')}, `
-  + `${mxSetLabel(t, 'face')} ${mxSetLabel(t, 'size')}`;
+/* how it reads in a sentence */
+const mxSetSays = (t) => `${mxSetLabel(t, 'stance').toLowerCase()}, ${mxSetLabel(t, 'layout').toLowerCase()} `
+  + `in ${mxSetLabel(t, 'columns').toLowerCase()}, ${mxSetLabel(t, 'face')} ${mxSetLabel(t, 'size')}`;
 
 const mxFieldLabel = (t, key) => t.fields.find(f => f.key === key)?.label || key;
 
@@ -2432,8 +2461,15 @@ function mxTplSuggest(t) {
   const out = [];
   const want = MX_TPL_WANTED.find(([re]) => !re.test(hay));
   if (want) out.push(`Add a section on ${want[1]}`);
+  /* what you would reach for next follows the position it was written
+     to: a firm draft is asked to give, an easy one to hold */
   const sec = t.body.find(b => b.h !== undefined && b.h.trim());
-  if (sec) out.push(`Make ${sec.h.trim()} shorter and plainer`);
+  const stance = mxSet(t, 'stance');
+  if (sec) {
+    out.push(stance === 'firm' ? `Soften ${sec.h.trim()} — give them somewhere to land`
+      : stance === 'light' ? `Hold a firmer line on ${sec.h.trim()}`
+      : `Make ${sec.h.trim()} shorter and plainer`);
+  }
   out.push(t.fields.some(f => /(^|_)date$/.test(f.key))
     ? 'Give every blank an example value'
     : 'Add a blank for the effective date');

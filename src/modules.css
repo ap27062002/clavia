@@ -501,10 +501,27 @@
 /* beside a conversation the page cannot afford an inch of white on each
    side, so the margin narrows and everything set from it comes with it */
 .mx-tpl.is-in-chat .mx-doc { --mx-margin: 48px; }
-.is-page-a4 { --mx-page: 794px; }        /* 210mm at 96dpi */
-.is-page-letter { --mx-page: 816px; }    /* 8.5in */
-.is-page-a3 { --mx-page: 1123px; }       /* 297mm */
-.mx-doc.is-page-a4, .mx-doc.is-page-letter, .mx-doc.is-page-a3 { max-width: var(--mx-page); }
+.mx-doc { max-width: var(--mx-page, 794px); }
+/* two columns: half the width, twice the page. The bar and the title
+   stay across the top — only the body of it runs in columns. */
+.is-columns-two .mx-doc-body { column-count: 2; column-gap: 34px; }
+.is-columns-two .mx-sec { break-inside: avoid-column; }
+/* and a section has to be able to break when it is longer than a column */
+.is-columns-two .mx-sec-body { break-inside: auto; }
+
+/* how a blank is marked. Drawn around the name rather than written into
+   it, so what the document says is still the field and nothing has to be
+   re-read when the mark changes. */
+.is-blanks-square .mx-chip::before { content: '['; }
+.is-blanks-square .mx-chip::after { content: ']'; }
+.is-blanks-angle .mx-chip::before { content: '<'; }
+.is-blanks-angle .mx-chip::after { content: '>'; }
+.is-blanks-curly .mx-chip::before { content: '{'; }
+.is-blanks-curly .mx-chip::after { content: '}'; }
+.mx-chip::before, .mx-chip::after { color: var(--text-faint); }
+/* filled in, it is a value and not a blank any more */
+.mx-chip.is-set::before, .mx-chip.is-set::after { content: none; }
+.is-blanks-rule .mx-chip { border-bottom-style: solid; min-width: 7ch; }
 .is-face-times .mx-doc-in { font-family: 'Times New Roman', Times, serif; }
 .is-face-arial .mx-doc-in { font-family: Arial, Helvetica, sans-serif; }
 .is-face-calibri .mx-doc-in { font-family: Calibri, Candara, Segoe, sans-serif; }
