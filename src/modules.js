@@ -39,6 +39,16 @@ const MX = {
 /* Seeded once, then the saved copy is the only copy. */
 function mxData() {
   if (!state.mx || state.mxSeedV !== MX_SEED_V) { state.mx = structuredClone(MX_SEED); state.mxSeedV = MX_SEED_V; save(); }
+  /* What the shipped templates say they are used for came later, so a
+     copy saved before it takes it — without throwing away anything you
+     have made, which resetting the whole seed would. */
+  if (state.mxForV !== 1) {
+    for (const seed of MX_SEED.templates) {
+      const t = state.mx.templates.find(x => x.id === seed.id);
+      if (t && seed.usedFor) t.usedFor = structuredClone(seed.usedFor);
+    }
+    state.mxForV = 1; save();
+  }
   return state.mx;
 }
 const mxNow = () => new Date().toISOString();
@@ -1117,15 +1127,22 @@ function mxTplAbout(t, onHide) {
       line('Status', t.status === 'live' ? 'Published — ready to use' : 'A draft, not published yet'),
       t.description ? h('p', { class: 'mx-ab-p' }, t.description) : null,
 
+      /* the contracts it is reached for, which is what somebody picking
+         one actually needs to know */
       h('div', { class: 'mx-ab-sec' },
         h('h3', { class: 'mx-ab-h' }, 'Where it is generally used'),
-        work.length
-          ? h('ul', { class: 'mx-ab-work' }, ...work.map(k => h('li', {},
-              h('span', { class: 'mx-ab-work-t' }, k.name),
-              k.about ? h('span', { class: 'mx-ab-work-s' }, k.about) : null)))
-          : h('p', { class: 'mx-ab-none' }, `On its own, whenever this kind of ${(t.kind || 'agreement').toLowerCase()} is needed.`),
+        t.usedFor?.length
+          ? h('ul', { class: 'mx-ab-for' }, ...t.usedFor.map(x => h('li', {}, x)))
+          : h('p', { class: 'mx-ab-none' }, t.description || `Any ${(t.kind || 'agreement').toLowerCase()} of this kind.`),
         kinds.length ? h('p', { class: 'mx-ab-foot' },
-          `Comes up on ${kinds.join(' and ')} ${kinds.length > 1 ? 'requests' : 'requests'}.`) : null),
+          `It has gone out on ${kinds.join(' and ')} requests.`) : null),
+
+      /* and the work that reaches for it, said in that work's own words */
+      work.length ? h('div', { class: 'mx-ab-sec' },
+        h('h3', { class: 'mx-ab-h' }, 'The work that uses it'),
+        h('ul', { class: 'mx-ab-work' }, ...work.map(k => h('li', {},
+          h('span', { class: 'mx-ab-work-t' }, k.name),
+          k.about ? h('span', { class: 'mx-ab-work-s' }, k.about) : null)))) : null,
 
       h('div', { class: 'mx-ab-sec' },
         h('h3', { class: 'mx-ab-h' }, 'What you will be asked for'),
