@@ -1087,14 +1087,6 @@ function mxTplDuplicate(t) {
    questions somebody reaches for it with: what is it, what is in it,
    has it been used before, and what do I do now. */
 
-/* The skills that reach for this template — the work it is for, said
-   in that work's own words. Real linkage: a skill lists what it uses. */
-function mxTplUsedIn(t) {
-  let all = [];
-  try { all = (typeof skAll === 'function' ? skAll() : []) || []; } catch { return []; }
-  return all.filter(k => (k.uses || []).some(u => u.kind === 'template' && u.id === t.id));
-}
-
 /* the requests whose paper came off this template */
 function mxTplUses(t) {
   let reqs = [];
@@ -1110,26 +1102,21 @@ function mxTplUses(t) {
 
 function mxTplAbout(t, onHide) {
   const uses = mxTplUses(t);
-  const work = mxTplUsedIn(t);
   /* the kinds of request its paper has actually gone out on */
   const kinds = [...new Set(uses.map(r => r.type).filter(Boolean))].slice(0, 3);
-  const line = (label, value) => h('div', { class: 'mx-ab-row' },
-    h('span', { class: 'mx-ab-k' }, label), h('span', { class: 'mx-ab-v' }, value));
   return h('aside', { class: 'mx-tpl-about' },
     h('div', { class: 'mx-tpl-side-head' },
       h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, 'About')),
       h('span', { class: 'pb-grow' }),
       h('button', { class: 'pbv-icon', type: 'button', 'aria-label': 'Hide this',
         'data-tip': 'Hide About', html: PBV_PANEL, onclick: onHide })),
+    /* Three questions and nothing else: what is this for, what will it
+       ask me, and has anyone used it. What it is called, what it is set
+       in and what the skills around it do were all saying the same
+       thing a third time. */
     h('div', { class: 'mx-ab' },
       h('h2', { class: 'mx-ab-name' }, t.name || 'Untitled template'),
-      line('Type', t.kind || 'Agreement'),
-      line('Written', mxSetLabel(t, 'stance')),
-      line('Status', t.status === 'live' ? 'Published — ready to use' : 'A draft, not published yet'),
-      t.description ? h('p', { class: 'mx-ab-p' }, t.description) : null,
 
-      /* the contracts it is reached for, which is what somebody picking
-         one actually needs to know */
       h('div', { class: 'mx-ab-sec' },
         h('h3', { class: 'mx-ab-h' }, 'Where it is generally used'),
         t.usedFor?.length
@@ -1137,13 +1124,6 @@ function mxTplAbout(t, onHide) {
           : h('p', { class: 'mx-ab-none' }, t.description || `Any ${(t.kind || 'agreement').toLowerCase()} of this kind.`),
         kinds.length ? h('p', { class: 'mx-ab-foot' },
           `It has gone out on ${kinds.join(' and ')} requests.`) : null),
-
-      /* and the work that reaches for it, said in that work's own words */
-      work.length ? h('div', { class: 'mx-ab-sec' },
-        h('h3', { class: 'mx-ab-h' }, 'The work that uses it'),
-        h('ul', { class: 'mx-ab-work' }, ...work.map(k => h('li', {},
-          h('span', { class: 'mx-ab-work-t' }, k.name),
-          k.about ? h('span', { class: 'mx-ab-work-s' }, k.about) : null)))) : null,
 
       h('div', { class: 'mx-ab-sec' },
         h('h3', { class: 'mx-ab-h' }, 'What you will be asked for'),
