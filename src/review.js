@@ -25,6 +25,8 @@
    Loaded before app.js; runs at call time.
 ================================================================== */
 
+/* how a review was run (paper · side · approach) under the playbook's name, and the card that changes it: off 20 Oct */
+const SHOW_RUN_SETUP = false;
 function reviewPage(req, onStatus) {
   const A = JV_REVIEWS[req.review];
   const J = (cls) => (cls ? cls.split(/\s+/).filter(Boolean).map(c => 'jv-' + c).join(' ') : '');
@@ -308,7 +310,8 @@ function reviewPage(req, onStatus) {
     more.innerHTML = RP_IC.dots; more.dataset.tip = 'More'; more.setAttribute('aria-label', 'More');
     more.onclick = (e) => { e.stopPropagation(); finishMenu(more); };
     top.append(sw, el('span', 'grow'), prog, again, more);
-    head.append(top, contextLine());
+    head.append(top);
+    if (SHOW_RUN_SETUP) head.append(contextLine());
 
     const k = a.counts, u = k.unacceptable || 0, f = k.fallback || 0, g = k.preferred || 0;
     const stack = el('div', 'stack');
@@ -334,7 +337,7 @@ function reviewPage(req, onStatus) {
     if (R.tab === 'ask') p.append(askView());
     else {
       p.append(head);
-      if (R.setupOpen) p.append(setupCard());
+      if (SHOW_RUN_SETUP && R.setupOpen) p.append(setupCard());
       list = el('div', 'plist');
       list.addEventListener('scroll', () => head.classList.toggle('jv-scrolled', list.scrollTop > 2), { passive: true });
       p.append(list);
@@ -347,15 +350,18 @@ function reviewPage(req, onStatus) {
       playbook: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 4v16"/><path d="M12.5 8.5h4M12.5 12h4M12.5 15.5h2.5"/></svg>',
       ask: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4.2 3.4c-.5.4-1.3 0-1.3-.6V16.9A2.5 2.5 0 0 1 4 14.5z"/><path d="M8.5 9h7M8.5 12h4.5"/></svg>',
     };
-    /* a page that opened from a request can add its own tab (Comments), which leads back there */
-    if (req.extraTab) TAB_ICONS[req.extraTab.k] = req.extraTab.icon;
-    for (const [t, label] of [['playbook', 'Playbook'], ['ask', 'Ask Clavia'], ...(req.extraTab ? [[req.extraTab.k, req.extraTab.label]] : [])]) {
+    /* a page that opened from a request can add its own tabs (Deviations, Comments), which lead back there; at: where it sits */
+    const extras = req.extraTabs || (req.extraTab ? [req.extraTab] : []);
+    const extraOf = (k) => extras.find(x => x.k === k);
+    const order = [['playbook', 'Playbook'], ['ask', 'Ask Clavia']];
+    for (const x of extras) { TAB_ICONS[x.k] = x.icon; order.splice(x.at ?? order.length, 0, [x.k, x.label]); }
+    for (const [t, label] of order) {
       const b = el('button');
       /* Ask is Clavia, so it wears Clavia's mark */
       if (t === 'ask') b.append(quillEl('static', { cls: 'jv-tab-q' })); else b.innerHTML = TAB_ICONS[t];
       b.append(el('span', null, label));
       b.setAttribute('aria-selected', (R.tab || 'playbook') === t);
-      b.onclick = () => { if (req.extraTab && t === req.extraTab.k) { req.extraTab.run(); return; } if ((R.tab || 'playbook') !== t) { R.tab = t; renderWorkspace(); } };
+      b.onclick = () => { if (extraOf(t)) { extraOf(t).run(); return; } if ((R.tab || 'playbook') !== t) { R.tab = t; renderWorkspace(); } };
       tabs.append(b);
     }
     p.append(tabs);
@@ -1283,6 +1289,9 @@ function reviewPage(req, onStatus) {
       nm.title = `${R.notes[key].length} note${R.notes[key].length > 1 ? 's' : ''}`;
       row.append(nm);
     }
+    /* a page from a request can mark a clause with something of its own (a deviation), which leads back there */
+    const xm = req.clauseMark?.(c);
+    if (xm) { const m = el('span', 'xmark'); m.innerHTML = xm.html; m.dataset.tip = xm.tip; m.onclick = (e) => { e.stopPropagation(); xm.run(); }; row.append(m); }
     const chev = el('span', 'chev');
     chev.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m9 6 6 6-6 6"/></svg>';
     row.append(chev);

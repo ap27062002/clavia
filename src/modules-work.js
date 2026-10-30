@@ -1031,6 +1031,20 @@ function mxWComments(r) {
 /* active: still needs someone — open on the person tagged, or replied and back with the other side */
 const mxWActive = (r) => mxWComments(r).filter(c => c.status !== 'closed');
 
+/* ── deviations: where their latest version goes back on something already agreed ──
+   What Clavia found comes from MX_DEVIATIONS; what legal decided (accept, push back)
+   is kept on the request, by deviation id. A check counts only while the version it
+   read is still the other side's, so a version uploaded over it never inherits it. */
+function mxDevOf(r, docId) {
+  const key = r.id === mxData().showcaseId ? 'showcase' : r.id;
+  const x = typeof MX_DEVIATIONS !== 'undefined' ? MX_DEVIATIONS[key]?.[docId] : null;
+  const d = x && mxDocuments(r).find(q => q.id === docId);
+  return d && d.versions[x.v - 1]?.by === r.counterparty ? x : null;
+}
+const mxDevDec = (r) => (r.devDec ||= {});
+const mxDevOpen = (r, docId) => (mxDevOf(r, docId)?.items || []).filter(x => !mxDevDec(r)[x.id]);
+const MX_DEV_KIND = { reversal: 'Reversal', prior: 'Past contract', precedent: 'Precedent' };
+
 /* ── a round, run as a playbook review ─────────────────────────────
    Their version of the document, clause by clause, read against the
    playbook: the review workspace (review.js) the Contracts module uses,
@@ -1106,9 +1120,20 @@ function mxRoundPage(r, docId) {
   const back = () => { MX.intake.round = null; MX.intake.tab = 'docs'; go('intake'); };
   const req = { id: r.id, title: a.name, review: a.id, activity: r.activity, answered: rd.answered,
     tab: MX.intake.roundTab || 'playbook',
-    /* the third tab: back to the document, with its comments open */
-    extraTab: { k: 'comments', label: 'Comments', icon: MX_TAB_ICONS.comments,
-      run: () => { MX.intake.round = null; MX.intake.roundTab = null; MX.intake.swap = true; state.rqCmtPanel = true; save(); MX.intake.tab = 'docs'; MX.intake.focus = { doc: d.id, v: d.versions.length }; go('intake'); } },
+    /* Deviations and Comments: back to the document, with that pane open (Deviations sits second, after Playbook) */
+    extraTabs: [['deviations', 'Deviations', 1], ['comments', 'Comments']].map(([k, label, at]) => ({ k, label, at, icon: MX_TAB_ICONS[k],
+      run: () => { const dv = k === 'deviations' && mxDevOf(r, d.id); MX.intake.round = null; MX.intake.roundTab = null; MX.intake.swap = true; state.rqCmtPanel = true; state.rqPane = k === 'deviations' ? 'devs' : 'comments'; save();
+        MX.intake.tab = 'docs'; MX.intake.focus = { doc: d.id, v: dv ? dv.v : d.versions.length }; go('intake'); } })),
+    /* a clause their version reopens carries the deviation mark; it opens that deviation beside the document */
+    clauseMark: (c) => {
+      const dv = mxDevOf(r, d.id); if (!dv || dv.v !== rd.v) return null;
+      const topic = (t) => mxPlain(t).replace(/^\s*\d+\.\s*/, '').trim();
+      const x = dv.items.find(it => topic(it.clause) === topic(c.heading)); if (!x || mxDevDec(r)[x.id]) return null;
+      return { html: MX_TAB_ICONS.deviations,
+        tip: `${MX_DEV_KIND[x.kind]}: ${x.head}`,
+        run: () => { MX.intake.round = null; MX.intake.roundTab = null; MX.intake.swap = true; MX.intake.devFocus = x.id; state.rqCmtPanel = true; state.rqPane = 'devs'; save();
+          MX.intake.tab = 'docs'; MX.intake.focus = { doc: d.id, v: dv.v }; go('intake'); } };
+    },
     get work() { return rd.work; }, set work(w) { rd.work = w; },
     back: { label: 'Documents', run: back },
     respond: (applied, notes, sure) => {
@@ -1158,11 +1183,13 @@ const MX_ST_MARK = {
 const mxFullWhen = (iso) => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ' at ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); };
 const mxWhenTip = (o) => mxFullWhen(o.when) + (o.edited ? ` · edited ${mxFullWhen(o.edited)}` : '');
 const mxStMark = (k) => h('span', { class: 'rqp-st-ic is-' + k, html: MX_ST_MARK[k] || '' });
-/* the three tabs under a document's side pane: the playbook's reading, questions, and comments — the Contracts icons */
+/* the tabs under a document's side pane: the playbook's reading, deviations, questions, and comments — the Contracts icons */
 const MX_TAB_ICONS = {
   playbook: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 4v16"/><path d="M12.5 8.5h4M12.5 12h4M12.5 15.5h2.5"/></svg>',
   ask: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4.2 3.4c-.5.4-1.3 0-1.3-.6V16.9A2.5 2.5 0 0 1 4 14.5z"/><path d="M8.5 9h7M8.5 12h4.5"/></svg>',
   comments: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4.5 19.5l1.3-4.6A7.5 7.5 0 1 1 20 11.5z"/></svg>',
+  /* a position that came back round: the arrow turns back on itself */
+  deviations: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 13.5 4.5 9 9 4.5"/><path d="M4.5 9h10a5 5 0 0 1 0 10H10"/></svg>',
 };
 /* comments open = the request folds away (15 Oct); false keeps the three-pane layout */
 const CMT_FOCUS = true;
@@ -1901,8 +1928,15 @@ function intakePage(r, opts = {}) {
     const cs = mxWComments(r).filter(c => c.doc === docId);
     const pick = focus || cs.find(c => c.status === 'open' && c.to === USER.name) || cs.find(c => c.status !== 'closed') || cs[0];
     if (pick) openRef({ doc: docId, v: pick.v }); else openRef({ doc: docId });
+    paneMode = 'comments'; state.rqPane = 'comments';
     showPanel(true, pick?.id ?? null);
     if (pick) setTimeout(() => markFocus(true), 80);
+  };
+  /* a document's deviations, from its row: the version they are in, with the pane on them */
+  const openDevs = (docId) => {
+    const dv = mxDevOf(r, docId); openRef({ doc: docId, v: dv?.v });
+    paneMode = 'devs'; state.rqPane = 'devs';
+    if (right?.classList.contains('has-cmts')) { paintCPanel(); requestAnimationFrame(() => markDevs()); } else showPanel(true);
   };
   const openWord = (c) => openCmts(c.doc, c);
   /* Tracked Comments: every comment tagged in this request's documents, under its document, each one
@@ -2550,6 +2584,10 @@ function intakePage(r, opts = {}) {
         ((cs) => cs.length ? h('button', { class: 'rqp-dc-cmt is-ic', type: 'button', 'data-tip': `${mxPlural(cs.length, 'open comment')}`,
           onclick: (e) => { e.stopPropagation(); openCmts(d.id); } },
           h('span', { class: 'rqp-dc-cmt-ic', html: MX_TAB_ICONS.comments }), String(cs.length)) : null)(mxWComments(r).filter(c => c.doc === d.id && c.status !== 'closed')),
+        /* its open deviations, beside the comments: a click opens the version they are in, with them beside it */
+        ((ds) => ds.length ? h('button', { class: 'rqp-dc-cmt rqp-dc-dev is-ic', type: 'button', 'data-tip': mxPlural(ds.length, 'open deviation'),
+          onclick: (e) => { e.stopPropagation(); openDevs(d.id); } },
+          h('span', { class: 'rqp-dc-cmt-ic', html: MX_TAB_ICONS.deviations }), String(ds.length)) : null)(mxDevOpen(r, d.id)),
         /* the negotiation word ("With Brightwell", "3 to answer"), off 15 Oct: rows show only the comment count */
         ((rs) => DOC_ROUND_CHIP && rs ? h('button', { class: 'rqp-dc-round is-' + rs.k, type: 'button', 'data-tip': 'Open the round',
           onclick: (e) => { e.stopPropagation(); openReview(d.id); } }, rs.say) : null)(mxRoundSay(r, d)),
@@ -3064,6 +3102,7 @@ function intakePage(r, opts = {}) {
     scroll.scrollTop = 0;
     paintCtx?.();
     if (right?.classList.contains('has-cmts')) { paintCPanel(); requestAnimationFrame(() => markFocus()); }
+    requestAnimationFrame(() => markDevs());
     paintCmtN();
     if (tab === 'docs') paintBody();
   };
@@ -3072,6 +3111,7 @@ function intakePage(r, opts = {}) {
     onclick: () => {
       const t = String(getSelection()).replace(/\s+/g, ' ').trim(); selBtn.hidden = true; if (!t) return;
       cmtQuote = t.length > 400 ? t.slice(0, 400) + '…' : t;
+      paneMode = 'comments'; state.rqPane = 'comments';
       /* the words stay marked in the document while the comment is written */
       try { const sel = getSelection(); if (sel.rangeCount && window.CSS?.highlights && typeof Highlight !== 'undefined') CSS.highlights.set('rqp-draft', new Highlight(sel.getRangeAt(0).cloneRange())); sel.removeAllRanges(); } catch (e) {}
       if (!right.classList.contains('has-cmts')) showPanel(true); else paintCPanel();
@@ -3387,8 +3427,24 @@ function intakePage(r, opts = {}) {
   const cmtN = h('span', { class: 'rqp-cmt-n' });
   const cmtBtn = h('button', { class: 'rqp-tool rqp-tool--icon rqp-cmt-btn', type: 'button', 'data-tip': 'Comment', 'aria-label': 'Comment on this version',
     html: ICON('<path d="M6.5 4.5h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H11l-4.2 3.3a.5.5 0 0 1-.8-.4v-2.9h.5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z"/><path d="M8.5 9h7M8.5 12.3h4.5"/>'),
-    onclick: (e) => { e.stopPropagation(); showPanel(!right.classList.contains('has-cmts')); } }, cmtN);
-  const paintCmtN = () => { const d = docs[di]; const n = d ? mxWComments(r).filter(c => c.doc === d.id && c.status !== 'closed').length : 0; cmtN.textContent = n ? String(n) : ''; cmtN.hidden = !n; };
+    onclick: (e) => { e.stopPropagation(); paneTo('comments'); } }, cmtN);
+  const paintCmtN = () => { const d = docs[di]; const n = d ? mxWComments(r).filter(c => c.doc === d.id && c.status !== 'closed').length : 0; cmtN.textContent = n ? String(n) : ''; cmtN.hidden = !n; paintDevN(); };
+  /* deviations sit beside comments in the bar: shown on a document Clavia has checked, with what is still open */
+  const devN = h('span', { class: 'rqp-cmt-n rqp-dev-n' });
+  const devBtn = h('button', { class: 'rqp-tool rqp-tool--icon rqp-cmt-btn rqp-dev-btn', type: 'button', 'data-tip': 'Deviations', 'aria-label': 'Deviations from what was agreed',
+    html: ICON('<path d="M9 13.5 4.5 9 9 4.5"/><path d="M4.5 9h10a5 5 0 0 1 0 10H10"/>'),
+    onclick: (e) => { e.stopPropagation(); paneTo('devs'); } }, devN);
+  const paintDevN = () => { const d = docs[di]; const has = !!(d && mxDevOf(r, d.id)); const n = has ? mxDevOpen(r, d.id).length : 0;
+    devBtn.hidden = !has; devN.textContent = n ? String(n) : ''; devN.hidden = !n; };
+  /* the side pane holds comments or deviations; the bar's buttons open it on theirs, or close it if it already shows it */
+  let paneMode = state.rqPane === 'devs' ? 'devs' : 'comments';
+  const paneTo = (mode, focus) => {
+    const open = right.classList.contains('has-cmts');
+    if (open && paneMode === mode && focus === undefined) return showPanel(false);
+    paneMode = mode; state.rqPane = mode; save();
+    if (mode === 'devs' && focus !== undefined) devFocus = focus;
+    if (!open) showPanel(true); else paintCPanel();
+  };
 
   /* ── the comments pane: every comment on this document, beside it, the way Word shows them ──
      Tagged comments from Word in the order they sit in the text, then comments made here. A
@@ -3413,7 +3469,7 @@ function intakePage(r, opts = {}) {
     grid?.classList.toggle('is-cmt-focus', !!on && CMT_FOCUS);
     fitCmts();
     if (focus !== undefined) cmtFocus = focus;
-    paintCPanel(); markFocus();
+    paintCPanel(); markFocus(); requestAnimationFrame(() => markDevs());
   };
   /* with the comments open, the document side takes the room it needs for the page and the pane together */
   const fitCmts = () => {
@@ -3462,6 +3518,7 @@ function intakePage(r, opts = {}) {
   /* the comments, drawn the same way in two places: the pane beside the document, and the request's Comments tab
      (o.into: the tab's holder, o.di: which document, chosen with the switcher at its top) */
   const paintCPanel = (o = {}) => {
+    if (!o.into && paneMode === 'devs') return paintDPanel();
     const tabMode = !!o.into, T = o.into || cpanel;
     const d = tabMode ? docs[o.di] : docs[di]; if (!d || !T) return;
     const vi = tabMode ? d.versions.length - 1 : curVi();
@@ -3842,11 +3899,7 @@ function intakePage(r, opts = {}) {
         mine.length > 0 && !shown ? h('p', { class: 'rqp-cp-none' }, qq ? `Nothing matches “${cmtQ.trim()}”.` : cmtWho.size ? 'No threads match these filters.' : ({ open: 'No open threads.', replied: 'No replied threads.', closed: 'No resolved threads.' })[cmtF] || 'No comments.') : null),
       /* no box at the bottom (15 Oct): a comment starts from words you select in the document */
       /* Playbook and Ask open the playbook review of this document; Comments is here */
-      tabMode ? null : ((has) => h('div', { class: 'rqp-cp-tabs' }, ...[['playbook', 'Playbook'], ['ask', 'Ask Clavia'], ['comments', 'Comments']].map(([k, label]) =>
-        h('button', { type: 'button', 'aria-selected': String(k === 'comments'), disabled: k !== 'comments' && !has,
-          'data-tip': k !== 'comments' && !has ? 'No playbook review of this document yet' : null,
-          onclick: () => { if (k === 'comments') return; MX.intake.roundTab = k; MX.intake.swap = true; openReview(d.id); } },
-          k === 'ask' ? quillEl('static', { cls: 'rqp-tab-q' }) : h('span', { html: MX_TAB_ICONS[k] }), label))))(!!mxRoundOf(r, d.id))].filter(Boolean));
+      tabMode ? null : paneTabs(d, 'comments')].filter(Boolean));
     /* replies hang off the comment: a line from its author's face curves into each reply */
     /* one trunk from the comment's face down to the last reply; each reply curves off it into its own face */
     const threadLines = () => T.querySelectorAll('.wd-card.is-on .wd-thread').forEach(th => {
@@ -3863,6 +3916,269 @@ function intakePage(r, opts = {}) {
     /* no line under the tools; a soft shadow only once the list has scrolled under them */
     ((L, tools) => { if (!L || !tools) return; const f = () => tools.classList.toggle('is-scrolled', L.scrollTop > 2); L.addEventListener('scroll', f, { passive: true }); f(); })(T.querySelector('.rqp-cp-list'), T.querySelector('.rqp-cp-tools'));
     T.querySelectorAll('.wd-card.is-on .wd-in, .wd-card.is-on .wd-edit').forEach(t => t.addEventListener('input', () => requestAnimationFrame(threadLines)));
+  };
+  /* ── the deviations pane: where their version goes back on what was agreed, beside the document ──
+     One card per deviation, in the order the clauses run. A card takes you to its words; open,
+     it shows how the point moved version by version (one thread, nothing to compare by hand),
+     why it counts as settled, and the two answers: push back (the agreed wording back as our
+     redline, and a comment for them) or accept. Both can be undone. */
+  /* arriving from a deviation mark in the playbook review: that one open, and its words in view */
+  let devFocus = MX.intake.devFocus || null, devPush = null;
+  if (devFocus) { MX.intake.devFocus = null; setTimeout(() => markDevs(true), 450); }
+  const DEV_IC = '<path d="M9 13.5 4.5 9 9 4.5"/><path d="M4.5 9h10a5 5 0 0 1 0 10H10"/>';
+  /* the four tabs under the pane: Playbook and Ask open the playbook review; Deviations and Comments swap in place */
+  const paneTabs = (d, cur) => h('div', { class: 'rqp-cp-tabs' }, ...[['playbook', 'Playbook'], ['deviations', 'Deviations'], ['ask', 'Ask Clavia'], ['comments', 'Comments']].map(([k, label]) => {
+    const has = !!mxRoundOf(r, d.id), here = k === 'comments' || k === 'deviations';
+    return h('button', { type: 'button', 'aria-selected': String(k === cur), disabled: !here && !has,
+      'data-tip': !here && !has ? 'No playbook review of this document yet' : null,
+      onclick: () => {
+        if (k === cur) return;
+        if (here) { paneMode = k === 'deviations' ? 'devs' : 'comments'; state.rqPane = paneMode; save(); paintCPanel(); return requestAnimationFrame(() => { markFocus(); markDevs(); }); }
+        MX.intake.roundTab = k; MX.intake.swap = true; openReview(d.id);
+      } },
+      k === 'ask' ? quillEl('static', { cls: 'rqp-tab-q' }) : h('span', { html: MX_TAB_ICONS[k] }), label);
+  }));
+  const devDay = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const longDay = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+  const actOf = (re) => re ? (r.activity || []).find(a => re.test(a.what || '')) : null;
+  const cpWord = () => (r.counterparty || 'They').split(/\s+/)[0];
+  /* the words a deviation is about, as a range in the page (struck words do not count, as in the comments) */
+  const rangeOf = (q) => {
+    if (!q) return null;
+    const nodes = [], walker = document.createTreeWalker(page, NodeFilter.SHOW_TEXT); let text = '';
+    while (walker.nextNode()) { const n = walker.currentNode; if (n.parentElement.closest('del')) continue; nodes.push([n, text.length]); text += n.data; }
+    const at = text.indexOf(q); if (at < 0) return null;
+    const loc = (i) => { for (let k = nodes.length - 1; k >= 0; k--) if (nodes[k][1] <= i) return [nodes[k][0], i - nodes[k][1]]; };
+    const [sn, so] = loc(at), [en, eo] = loc(at + q.length);
+    const rg = new Range(); rg.setStart(sn, Math.min(so, sn.length)); rg.setEnd(en, Math.min(eo, en.length));
+    return rg;
+  };
+  /* in the document: a mark in the margin beside each deviation; the open one's words washed, as a comment's are */
+  const devRail = h('div', { class: 'rqp-dev-rail' });
+  scroll.append(devRail);
+  const markDevs = (scrollTo) => {
+    if (window.CSS?.highlights) { CSS.highlights.delete('rqp-dev'); CSS.highlights.delete('rqp-dev-on'); }
+    devRail.replaceChildren();
+    const d = docs[di], dv = d && mxDevOf(r, d.id);
+    if (!dv || vi !== dv.v - 1 || !page.isConnected) return;
+    const dec = mxDevDec(r), on = [];
+    const sr = scroll.getBoundingClientRect(), pr = page.getBoundingClientRect();
+    for (const x of dv.items) {
+      const k = dec[x.id], rg = rangeOf(k?.d === 'push' && k.redline ? x.back : x.quote); if (!rg) continue;
+      if (x.id === devFocus) on.push(rg);
+      const top = (rg.getClientRects()[0] || rg.getBoundingClientRect()).top;
+      devRail.append(h('button', { class: 'rqp-dev-pin' + (k ? ' is-done' : '') + (x.id === devFocus ? ' is-on' : ''), type: 'button',
+        style: `top:${Math.round(top - sr.top + scroll.scrollTop - 3)}px;left:${Math.round(pr.right - sr.left - 34)}px`,
+        'data-tip': `${MX_DEV_KIND[x.kind]}: ${x.term}`, 'aria-label': `Deviation: ${x.term}`, html: ICON(DEV_IC, 13),
+        onclick: () => paneTo('devs', x.id) }));
+      if (scrollTo && x.id === devFocus) scroll.scrollTo({ top: scroll.scrollTop + top - sr.top - 160, behavior: 'smooth' });
+    }
+    if (on.length && window.CSS?.highlights && typeof Highlight !== 'undefined') CSS.highlights.set('rqp-dev-on', new Highlight(...on));
+  };
+  /* the marks follow the text as the page reflows (the pane opening, the window, the splitter); the observer is held on the page so it lives as long as the page */
+  if (typeof ResizeObserver === 'function') { let q = 0; page.devRO = new ResizeObserver(() => { cancelAnimationFrame(q); q = requestAnimationFrame(() => markDevs()); }); page.devRO.observe(page); }
+  /* repaint the page where it is: a decision changes the words, not where you are reading */
+  const inPlace = () => { const st = scroll.scrollTop; paintDoc(); scroll.scrollTop = st; requestAnimationFrame(() => markDevs()); };
+  const devVer = () => { const d = docs[di], dv = mxDevOf(r, d.id); return [d, dv, d.versions[dv.v - 1]]; };
+  const focusDev = (x) => {
+    const [, dv] = devVer();
+    devFocus = devFocus === x.id ? null : x.id; devPush = null;
+    if (devFocus && vi !== dv.v - 1) { vi = dv.v - 1; paintDoc(); } else paintDPanel();
+    setTimeout(() => markDevs(!!devFocus), 60);
+  };
+  const pushDev = (x, text, redline) => {
+    const [d, dv, ver] = devVer(), cp = cpWord();
+    if (redline) ver.blocks = ver.blocks.map(b => ({ ...b, v: x.edits.reduce((s, [theirs, ours]) => s.replace(theirs, ours), b.v) }));
+    const c = { id: 'wc' + Date.now().toString(36), doc: d.id, v: dv.v, clause: x.clause, quote: redline ? x.back : x.quote, by: USER.name, to: null, text, when: mxNow(), status: 'open', thread: [] };
+    mxWComments(r).push(c);
+    mxDevDec(r)[x.id] = { d: 'push', redline, cid: c.id, by: USER.name, at: mxNow() };
+    mxLog(r, { ev: 'event', what: `pushed back on ${x.term.toLowerCase()} in v${dv.v}${redline ? `: the v${dv.v - 1} wording is back as a redline, with a comment for ${cp}` : `, with a comment for ${cp}`}`, ref: { doc: d.id, v: dv.v } });
+    devPush = null; r.updated = mxNow(); save();
+    if (vi === dv.v - 1) inPlace(); else paintDPanel();
+    paintCmtN();
+    pbToast(redline ? `Pushed back. The v${dv.v - 1} wording is back in v${dv.v} as your redline.` : 'Pushed back, with a comment.', { label: 'Undo', run: () => undoDev(x) });
+  };
+  const acceptDev = (x) => {
+    const [d, dv] = devVer();
+    mxDevDec(r)[x.id] = { d: 'accept', by: USER.name, at: mxNow() };
+    mxLog(r, { ev: 'event', what: `accepted ${cpWord()}’s change to ${x.term.toLowerCase()} in v${dv.v}`, ref: { doc: d.id, v: dv.v } });
+    r.updated = mxNow(); save();
+    paintDPanel(); markDevs(); paintDevN();
+    pbToast(`Accepted. ${cpWord()}’s v${dv.v} wording is now agreed.`, { label: 'Undo', run: () => undoDev(x) });
+  };
+  /* undo takes back exactly what the answer did: our redline out of their version, and the comment it made */
+  const undoDev = (x) => {
+    const [, dv, ver] = devVer(), k = mxDevDec(r)[x.id]; if (!k) return;
+    if (k.d === 'push') {
+      if (k.redline) ver.blocks = ver.blocks.map(b => ({ ...b, v: x.edits.reduce((s, [theirs, ours]) => s.replace(ours, theirs), b.v) }));
+      const cs = mxWComments(r), i = cs.findIndex(c => c.id === k.cid); if (i >= 0) cs.splice(i, 1);
+    }
+    delete mxDevDec(r)[x.id]; r.updated = mxNow(); save();
+    if (vi === dv.v - 1) inPlace(); else paintDPanel();
+    paintCmtN();
+  };
+  /* ── the clause through the versions: its words in each, as that side left them ──
+     Read from the versions themselves (each one's marks taken) and compared word by word
+     with the one before, so a changed number and a rewritten paragraph read the same way.
+     Their version is read as they sent it, even once our redline has gone into it; our
+     redline, still to send, is the newest. The first version is the words that later move,
+     shown plain. */
+  const devWhole = new Set();
+  const devBox = document.createElement('div');
+  const devClean = (html) => { devBox.innerHTML = html; devBox.querySelectorAll('del').forEach(n => n.remove()); return devBox.textContent.replace(/\s+/g, ' ').trim(); };
+  /* word by word, as Compare does, with two fixes for reading a clause: a full stop or comma is its own word
+     (so "(£3,000,000)." and "(£3,000,000) per claim" share the figure), and changes kept apart by a word
+     or two read as one phrase replaced ("courts of England and Wales" → "Court of Session in Edinburgh") */
+  const devDiff = (a, b) => {
+    const sep = (t) => t.replace(/([^\s])([.,;:])(?=\s|$)/g, '$1\u2009$2');
+    const ops = mxWordDiff(sep(a), sep(b)).map(([kk, t]) => [kk, t.replace(/\u2009/g, '')]).filter(([, t]) => t);
+    const out = []; let g = null;
+    /* the separator taken out can leave a change touching the word before or after it: put the space back */
+    const word = /^[\w(£$“"'‘]/;
+    const flush = () => { if (!g) return; const dd = g.del.join(' '), nn = g.ins.join(' '), last = out[out.length - 1];
+      if (last && last[0] === 'eq' && !/\s$/.test(last[1]) && word.test(dd || nn)) out.push(['eq', ' ']);
+      if (dd) out.push(['del', dd]); if (dd && nn) out.push(['eq', ' ']); if (nn) out.push(['ins', nn]); g = null; };
+    ops.forEach(([kk, t], i) => {
+      if (kk !== 'eq') { (g ||= { del: [], ins: [] })[kk].push(t.trim()); return; }
+      const next = ops[i + 1], words = t.trim() ? t.trim().split(/\s+/) : [];
+      if (g && next && next[0] !== 'eq' && words.length <= 2 && !/[.;:]$/.test(t.trim())) { if (words.length) { g.del.push(...words); g.ins.push(...words); } return; }
+      flush(); if (out.length && out[out.length - 1][0] !== 'eq' && word.test(t)) out.push(['eq', ' ']); out.push([kk, t]);
+    });
+    flush();
+    return out;
+  };
+  const devThread = (x, d, dv) => {
+    const k = mxDevDec(r)[x.id], redlined = k?.d === 'push' && k.redline;
+    const paraIn = (v, unredline) => {
+      for (const b of d.versions[v - 1]?.blocks || []) {
+        if (b.t !== 'p') continue;
+        const t = devClean(unredline ? x.edits.reduce((s2, [th, ou]) => s2.replace(ou, th), b.v) : b.v);
+        /* only the sentence the deviation is about, so other edits in the same paragraph stay out of it */
+        if (t.includes(x.para)) return (x.sent && t.split(/(?<=[.;])\s+(?=[A-Z])/).find(q => q.includes(x.sent))) || t;
+      }
+      return '';
+    };
+    const rows = [];
+    for (let v = dv.from || 2; v <= dv.v; v++) {
+      const t = paraIn(v, v === dv.v && redlined), p = rows[rows.length - 1];
+      rows.push({ v, t, same: !!p && p.t === t, ops: p ? devDiff(p.t, t) : null });
+    }
+    /* the first version: plain, with the words that later move picked out */
+    const base = (ops) => { const out = [];
+      ops.forEach(([kk, t], i) => {
+        if (kk === 'ins' || (kk === 'eq' && /^\s+$/.test(t) && ops[i - 1]?.[0] === 'del' && ops[i + 1]?.[0] === 'ins')) return;
+        out.push([kk === 'del' ? 'hit' : 'eq', kk === 'eq' && ops[i - 1]?.[0] === 'ins' && /\s$/.test(out[out.length - 1]?.[1] || '') ? t.replace(/^\s+/, '') : t]);
+      });
+      return out.filter(([, t]) => t); };
+    const later = rows.find(w => !w.same && w !== rows[0]);
+    rows[0].ops = later ? base(devDiff(rows[0].t, later.t)) : [['eq', rows[0].t]];
+    if (redlined) { const t = paraIn(dv.v, false); rows.push({ v: d.versions.length + 1, next: true, t, ops: devDiff(rows[rows.length - 1].t, t) }); }
+    return rows;
+  };
+  /* the words around a change, cut with … so a long clause shows only the part that moved */
+  const devMark = (kk, t) => kk === 'eq' ? mxEsc(t) : kk === 'hit' ? `<span class="dv-hit">${mxEsc(t)}</span>` : `<${kk}>${mxEsc(t)}</${kk}>`;
+  const devClip = (ops) => {
+    if (!ops.some(([kk]) => kk !== 'eq')) { const t = ops.map(([, t2]) => t2).join(''); return mxEsc(t.length > 180 ? t.slice(0, 180).replace(/\s\S*$/, '') + '…' : t); }
+    return ops.map(([kk, t], i) => {
+      if (kk !== 'eq') return devMark(kk, t);
+      if (i === 0 && t.length > 80) return '…' + mxEsc(t.slice(-80).replace(/^\S*\s/, ''));
+      if (i === ops.length - 1 && t.length > 80) return mxEsc(t.slice(0, 80).replace(/\s\S*$/, '')) + '…';
+      if (t.length > 160) return mxEsc(t.slice(0, 70).replace(/\s\S*$/, '')) + ' … ' + mxEsc(t.slice(-70).replace(/^\S*\s/, ''));
+      return mxEsc(t);
+    }).join('');
+  };
+  const devFull = (ops) => ops.map(([kk, t]) => devMark(kk, t)).join('');
+  const BIC = {
+    mail: '<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4 7 8 6 8-6"/>',
+  };
+  const paintDPanel = () => {
+    const d = docs[di]; if (!d || !cpanel) return;
+    const dv = mxDevOf(r, d.id), items = dv?.items || [], dec = mxDevDec(r), cp = cpWord(), ver = dv && d.versions[dv.v - 1];
+    /* no statuses here (20 Oct): a deviation is answered inside its card, and the list stays in clause order */
+    const shown = [...items].sort((a, b) => parseInt(a.clause) - parseInt(b.clause));
+    const fill = (t, x) => {
+      const mail = x.basis?.find(b => b[0] === 'mail'), a = mail && actOf(mail[2]);
+      return t.replace('{agreed}', longDay(d.versions[x.agreed - 1].when)).replace('{mail}', a ? longDay(a.when) : 'email');
+    };
+    const card = (x) => {
+      const on = devFocus === x.id, k = dec[x.id], rows = devThread(x, d, dv);
+      const theirs = rows.find(w => w.v === dv.v && !w.next);
+      /* what kind of deviation, in words on the faint line (no coloured tags): the proof sits with it */
+      /* a past contract or a precedent is named, not quoted: the document is where to read it */
+      const sub = x.kind === 'reversal' ? `Reversal · agreed in v${x.agreed}, ${devDay(d.versions[x.agreed - 1].when)}` : `${MX_DEV_KIND[x.kind]} · ${x.source}`;
+      const head = [
+        h('div', { class: 'dv-top' }, h('span', { class: 'dv-cl' }, x.clause)),
+        h('div', { class: 'dv-t' }, x.head),
+        /* closed: their change itself, as a redline, cut to the words around it — a number or a paragraph take the same room */
+        on ? null : h('div', { class: 'dv-ex', html: devClip(theirs.ops) }),
+        h('div', { class: 'dv-sub' }, sub)];
+      const cls = 'wd-card dv-card' + (on ? ' is-on' : '') + (k ? ' is-done' : '');
+      if (!on) return h('div', { class: cls, tabindex: '0', role: 'button', 'data-did': x.id, onclick: () => focusDev(x),
+        onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); focusDev(x); } } }, ...head);
+      /* open: the clause in every version, newest first, each marked against the one before it; the version
+         it was agreed in carries its proof; a version that left it alone is one line */
+      const mail = (x.basis || []).filter(([bk]) => bk === 'mail').map(([, t, re]) => [t, actOf(re)]).filter(([, a]) => a);
+      const ver = (w) => {
+        const vv = d.versions[w.v - 1], side = w.next || vv.by !== r.counterparty ? 'Us' : cp;
+        const agreed = !w.next && w.v === x.agreed, now = !w.next && w.v === dv.v;
+        const tag = w.next ? ['ours', 'Your redline'] : agreed ? ['agreed', 'Agreed'] : now ? ['now', k?.d === 'accept' ? 'Accepted' : 'Reopened'] : null;
+        const whole = devWhole.has(x.id + ':' + w.v), clip = devClip(w.ops), full = devFull(w.ops);
+        const vh = h(w.next ? 'div' : 'button', { class: 'dv-vh', type: w.next ? null : 'button', 'data-tip': w.next ? null : `Open v${w.v}, ${vv.name}`,
+          onclick: w.next ? null : (e) => { e.stopPropagation(); vi = w.v - 1; paintDoc(); } },
+          h('b', {}, `v${w.v}`), h('span', { class: 'dv-vw' }, [side, w.next ? 'not sent yet' : devDay(vv.when), w.same ? 'left it as it was' : null].filter(Boolean).join(' · ')),
+          h('span', { class: 'pb-grow' }), tag ? h('span', { class: 'dv-tag is-' + tag[0] }, tag[1]) : null);
+        return h('div', { class: 'dv-ver' + (agreed ? ' is-agreed' : '') + (now ? ' is-now' : '') + (w.next ? ' is-next' : '') + (w.same ? ' is-same' : '') + (vi === w.v - 1 && !w.next ? ' is-here' : '') },
+          h('span', { class: 'dv-dot' }), vh,
+          w.same ? null : h('div', { class: 'dv-txt', html: whole ? full : clip }),
+          !w.same && clip !== full ? h('button', { class: 'mx-link dv-more', type: 'button', onclick: (e) => { e.stopPropagation(); devWhole[whole ? 'delete' : 'add'](x.id + ':' + w.v); paintDPanel(); } }, whole ? 'Show less' : 'Show all') : null,
+          agreed ? mail.map(([t, a]) => h('div', { class: 'dv-why' }, h('span', { class: 'dv-why-ic', html: ICON(BIC.mail, 14) }), h('span', {}, t, h('span', { class: 'dv-when' }, ` · ${devDay(a.when)}`)))) : null);
+      };
+      const thread = h('div', { class: 'dv-vers' }, ...[...rows].reverse().map(ver));
+      const prev = `v${dv.v - 1}`;
+      let tail;
+      if (k) {
+        const cmt = k.cid && mxWComments(r).find(c => c.id === k.cid);
+        tail = h('div', { class: 'dv-done' },
+          h('div', { class: 'dv-acts' },
+            cmt ? h('button', { class: 'mx-link', type: 'button', onclick: (e) => { e.stopPropagation(); paneMode = 'comments'; state.rqPane = 'comments'; save(); focusCmt(cmt); } }, 'See the comment') : null,
+            h('span', { class: 'pb-grow' }),
+            h('button', { class: 'mx-link', type: 'button', onclick: (e) => { e.stopPropagation(); undoDev(x); } }, 'Undo')));
+      } else if (devPush === x.id) {
+        /* the box starts empty; the reminder Clavia wrote from the record is one click away, never typed in for you */
+        const ta = h('textarea', { class: 'dv-in', rows: '2', placeholder: `Comment for ${cp}`, 'aria-label': `Comment for ${cp}` });
+        const chip = h('button', { class: 'dv-chip', type: 'button', onclick: (e) => { e.stopPropagation(); ta.value = fill(x.remind, x); chip.remove(); grow(); ta.focus(); } },
+          quillEl('static', { cls: 'dv-chip-q' }), x.kind === 'reversal' ? `Remind them it was agreed in v${x.agreed}` : x.kind === 'prior' ? 'Remind them of the pilot agreement' : 'Remind them it has stood since v2');
+        const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight + 2, 220) + 'px'; };
+        ta.oninput = grow; requestAnimationFrame(() => { grow(); ta.focus(); });
+        const chk = h('input', { type: 'checkbox' }); chk.checked = true;
+        const go = () => { const t = ta.value.trim(); if (!t) return ta.focus(); pushDev(x, t, chk.checked); };
+        ta.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); go(); } if (e.key === 'Escape') { devPush = null; paintDPanel(); } };
+        tail = h('div', { class: 'dv-push' },
+          ta, chip,
+          h('label', { class: 'dv-chk' }, chk, h('span', {}, `Put the ${prev} wording back as a redline`)),
+          h('div', { class: 'dv-acts' }, h('span', { class: 'pb-grow' }),
+            h('button', { class: 'rqp-cmtpop-txt', type: 'button', onclick: (e) => { e.stopPropagation(); devPush = null; paintDPanel(); } }, 'Cancel'),
+            h('button', { class: 'pb-btn pb-btn--primary', type: 'button', onclick: (e) => { e.stopPropagation(); go(); } }, 'Push back')));
+      } else {
+        tail = h('div', { class: 'dv-acts' },
+          h('button', { class: 'pb-btn pb-btn--primary', type: 'button', onclick: (e) => { e.stopPropagation(); devPush = x.id; paintDPanel(); } }, 'Push back'),
+          h('button', { class: 'pb-btn', type: 'button', onclick: (e) => { e.stopPropagation(); acceptDev(x); } }, 'Accept'),
+          h('span', { class: 'pb-grow' }),
+          h('button', { class: 'mx-link dv-cmp', type: 'button', 'data-tip': 'The full comparison, kept as a document', onclick: (e) => { e.stopPropagation(); compareInto({ di, k: dv.v - 2 }, { di, k: dv.v - 1 }); } }, `Compare ${prev} and v${dv.v}`));
+      }
+      return h('div', { class: cls, 'data-did': x.id, onclick: (e) => { if (!e.target.closest('button, textarea, label, input, a, .dv-vers')) focusDev(x); } },
+        ...head, thread, x.note ? h('p', { class: 'dv-note' }, x.note) : null, tail);
+    };
+    cpanel.replaceChildren(
+      h('div', { class: 'rqp-cp-head' }, h('b', {}, 'Deviations'), ver ? h('span', { class: 'dv-head-v', 'data-tip': ver.name }, `in v${dv.v}`) : null, h('span', { class: 'pb-grow' })),
+      h('div', { class: 'rqp-cp-list' },
+        ...shown.map(card),
+        !dv ? h('div', { class: 'rqp-cp-empty' },
+          h('span', { class: 'rqp-cp-empty-ic', html: ICON(DEV_IC, 18) }),
+          h('b', {}, 'No deviations'),
+          h('p', {}, `When ${r.counterparty || 'the other side'} sends a version back, Clavia checks every change against what was already agreed: earlier in this thread, in past contracts with them, and in your precedents.`)) : null),
+      paneTabs(d, 'deviations'));
+    if (devFocus) requestAnimationFrame(() => cpanel.querySelector(`.dv-card[data-did="${devFocus}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   };
   const openComments = () => {
     if (document.querySelector('.rqp-cmtpop')) { document.querySelector('.rqp-cmtpop').remove(); return; }
@@ -3945,7 +4261,7 @@ function intakePage(r, opts = {}) {
         h('div', { class: 'rqp-bar-l' }, h('button', { class: 'rqp-back rqp-back--ic', type: 'button', 'data-tip': 'Back to the request', 'aria-label': 'Back to the request', onclick: () => showPanel(false) },
           h('span', { html: ICON('<path d="M19 12H5M11 6l-6 6 6 6"/>', 15) })), docBtn, verBtn),
         h('div', { class: 'rqp-bar-r' },
-          cmtBtn,
+          devBtn, cmtBtn,
           tool('Download', h('span', { html: ICON('<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M4.5 17v1.5A1.5 1.5 0 0 0 6 20h12a1.5 1.5 0 0 0 1.5-1.5V17"/>') }), () => { giveFile(); pbToast('Downloading'); }, 'rqp-tool--icon'),
           tool('Email with Outlook', h('img', { src: 'assets/brand/outlook.svg', alt: '' }), emailDoc, 'rqp-tool--icon'),
           tool('Open in Word', h('img', { src: 'assets/brand/word.svg', alt: '' }), giveFile, 'rqp-tool--word'),
@@ -4027,9 +4343,11 @@ function intakeView() {
   if (['new', 'demo', 'selfserve'].includes(MX.intake.open)) { const k = MX.intake.open; MX.intake.open = null; setTimeout(() => (k === 'demo' ? rqDemo : k === 'selfserve' ? rqSelfDemo : rqStartChat)(), 0); }
   if (INTAKE_FX.rules && MX.intake.open === 'rules') return mxRulesPage();
   /* #intake/RQ-1049/comments: the request opened on its main document, with the comments pane open */
-  /* #intake/showcase/comments finds the Brightwell request whatever number it has in this browser */
-  const cm = /^(RQ-\d+|showcase)\/comments$/.exec(MX.intake.open || '');
-  if (cm) { MX.intake.open = cm[1] === 'showcase' ? mxData().showcaseId : cm[1]; state.rqCmtPanel = true; state.rqDocHidden = false; save(); MX.intake.tab = 'docs'; MX.intake.focus = { title: 'Master Services Agreement', v: 99 }; }
+  /* #intake/showcase/comments finds the Brightwell request whatever number it has in this browser; the comments sit on v4 */
+  /* #intake/showcase/deviations: the same, on Brightwell's v5 with the deviations pane open */
+  const cm = /^(RQ-\d+|showcase)\/(comments|deviations)$/.exec(MX.intake.open || '');
+  if (cm) { MX.intake.open = cm[1] === 'showcase' ? mxData().showcaseId : cm[1]; state.rqCmtPanel = true; state.rqPane = cm[2] === 'deviations' ? 'devs' : 'comments'; state.rqDocHidden = false; save(); MX.intake.tab = 'docs';
+    MX.intake.focus = { title: 'Master Services Agreement', v: cm[1] === 'showcase' && cm[2] === 'comments' ? 4 : 99 }; }
   const asRequester = INTAKE_FX.portal && /^(RQ-\d+)\/requester$/.exec(MX.intake.open || '');
   if (asRequester) { const x = list.find(r => r.id === asRequester[1]); if (x) return mxRequesterPage(x); }
   const opened = MX.intake.open && list.find(r => r.id === MX.intake.open);

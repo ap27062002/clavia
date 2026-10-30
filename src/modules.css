@@ -3864,3 +3864,67 @@ html.vt-cmts::view-transition-new(rqp-doc), html.vt-cmts::view-transition-new(rq
 /* the empty file row takes no room, so the line sits centred in the pill */
 .rqx-c-files[hidden] { display: none; }
 .rqx-compose--rich { justify-content: center; }
+
+/* ── deviations: where their version goes back on what was agreed ──
+   Their marks stay red and green; deviations wear a muted red of their own;
+   our redline back is blue, the way Word shows a second author. */
+.rqp-scroll { position: relative; }
+.rqp-dev-rail { position: absolute; top: 0; left: 0; width: 0; height: 0; }
+.rqp-dev-pin { position: absolute; z-index: 2; width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px; background: none; color: #A8432F; cursor: pointer; transition: background var(--fast) var(--ease), color var(--fast) var(--ease); }
+.rqp-dev-pin:hover { background: #F6F5F2; }
+.rqp-dev-pin.is-on { background: #A8432F; color: #fff; }
+.rqp-dev-pin.is-done { color: var(--text-faint); }
+::highlight(rqp-dev-on) { background-color: rgba(196, 92, 70, .16); }
+.rqp-page del.is-ours { color: #2D5BA8; text-decoration-color: rgba(45, 91, 168, .6); }
+.rqp-page ins.is-ours { color: #2D5BA8; text-decoration-color: rgba(45, 91, 168, .5); }
+.rqp-dev-btn[hidden] { display: none; }
+
+.dv-head-v { font-size: 12.5px; color: var(--text-faint); }
+.dv-card { gap: 4px; }
+.dv-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dv-cl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-faint); }
+.dv-top { min-height: 20px; }
+.dv-t { font-size: 14px; font-weight: 600; color: var(--text); }
+.dv-sub { font-size: 12.5px; color: var(--text-faint); }
+/* closed: their change as a redline, cut to the words around it */
+.dv-ex { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin: 2px 0 1px; font-size: 13px; line-height: 1.5; color: var(--text-soft); }
+.dv-ex del, .dv-txt del { color: #B4483C; text-decoration-color: rgba(180, 72, 60, .6); }
+.dv-ex ins, .dv-txt ins { color: #1F6E46; text-decoration: underline; text-decoration-color: rgba(31, 110, 70, .45); text-underline-offset: 3px; }
+.dv-sec { margin-top: 12px; }
+/* open: the clause through the versions, newest first, on one thread */
+.dv-vers { position: relative; display: flex; flex-direction: column; gap: 16px; margin-top: 14px; }
+.dv-vers::before { content: ''; position: absolute; left: 4.5px; top: 10px; bottom: 10px; width: 1px; background: #E6E2DB; }
+.dv-ver { position: relative; padding-left: 22px; }
+.dv-ver .dv-dot { position: absolute; left: 0; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1.5px #CFCAC2, 0 0 0 3px var(--surface); }
+.dv-ver.is-agreed .dv-dot { background: #2F7A52; box-shadow: 0 0 0 3px var(--surface); }
+.dv-ver.is-now .dv-dot { background: #A8432F; box-shadow: 0 0 0 3px var(--surface); }
+.dv-ver.is-next .dv-dot { box-shadow: inset 0 0 0 1.5px #2D5BA8, 0 0 0 3px var(--surface); }
+.dv-vh { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 20px; padding: 0; border: 0; background: none; font: inherit; font-size: 12.5px; color: var(--text-faint); text-align: left; }
+button.dv-vh { cursor: pointer; }
+button.dv-vh:hover .dv-vw { color: var(--text-soft); }
+.dv-vh b { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.dv-ver.is-here .dv-vh b { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(0, 0, 0, .25); }
+.dv-txt { margin-top: 4px; font-size: 13px; line-height: 1.55; color: var(--text); }
+.dv-hit { font-weight: 600; }
+.dv-ver.is-next .dv-txt del, .dv-ver.is-next .dv-txt ins { color: #2D5BA8; text-decoration-color: rgba(45, 91, 168, .55); }
+.dv-more { margin-top: 4px; font-size: 12px; }
+.dv-ver .dv-why { margin-top: 6px; padding: 0; }
+.dv-tag { flex: none; padding: 1px 6px; border-radius: 5px; font-size: 11px; font-weight: 600; line-height: 16px; }
+.dv-tag.is-agreed { background: #E9F3EC; color: #2F7A52; }
+.dv-tag.is-now { background: #FBEDE9; color: #A8432F; }
+.dv-tag.is-ours { background: #EAF0F9; color: #2D5BA8; }
+.dv-why { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; font-size: 13px; line-height: 1.45; color: var(--text-soft); }
+.dv-why-ic { display: grid; flex: none; margin-top: 1px; color: var(--text-faint); }
+.dv-when { color: var(--text-faint); }
+.dv-note { margin: 8px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--text-faint); }
+.dv-acts { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.dv-cmp { font-size: 12.5px; }
+.dv-push { margin-top: 12px; }
+.dv-in { display: block; width: 100%; box-sizing: border-box; resize: none; padding: 9px 11px; border: 1px solid #E6E2DB; border-radius: 8px; background: var(--surface); font: inherit; font-size: 13.5px; line-height: 1.45; color: var(--text); outline: 0; }
+.dv-in:focus { border-color: #CFCAC2; }
+.dv-chip { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; height: 28px; padding: 0 10px; border: 1px solid #E6E2DB; border-radius: 14px; background: var(--surface); font: inherit; font-size: 12.5px; color: var(--text-soft); cursor: pointer; transition: border-color var(--fast) var(--ease), color var(--fast) var(--ease); }
+.dv-chip:hover { border-color: #CFCAC2; color: var(--text); }
+.dv-chip-q { width: 14px; height: 14px; }
+.dv-chk { display: flex; align-items: center; gap: 8px; margin-top: 9px; font-size: 13px; color: var(--text-soft); cursor: pointer; }
+.dv-chk input { margin: 0; accent-color: var(--rail-bg); }
+.dv-done .dv-acts { margin-top: 10px; }

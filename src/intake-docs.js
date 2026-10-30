@@ -385,7 +385,7 @@ function mxShowcase(id) {
     P(`Either party may terminate this Agreement on written notice if the other commits a material breach and does not remedy it within thirty (30) days of notice.${o.convenience}`),
     P('When this Agreement ends, Customer’s right to use the Services ends, Customer will pay all fees due up to that date, and each party will return or destroy the other’s Confidential Information. Provider will keep Customer Data available for export for thirty (30) days and will then delete it.'),
     H('10. Governing Law'),
-    P(`This Agreement is governed by the laws of England and Wales, and the courts of England and Wales have exclusive jurisdiction.`),
+    P(`This Agreement is governed by the laws of ${o.law || 'England and Wales'}, and the ${o.courts || 'courts of England and Wales'} have exclusive jurisdiction.`),
     P('Before starting court proceedings, the parties will try in good faith to resolve any dispute between their senior executives within twenty (20) working days, unless one of them needs urgent relief.'),
   ];
   const base = { date: '1 November 2026', addr: '40 Holborn Viaduct, London EC1N 2PB', term: 'thirty-six (36) months', notice: 'sixty (60) days', pay: 'thirty (30) days',
@@ -407,6 +407,14 @@ function mxShowcase(id) {
     breach: 'within forty-eight (48) hours', cap: 'one hundred and fifty per cent (150%) of the fees paid and payable in the twelve (12) months before the claim',
     superCap: ', save that Provider’s liability for breach of clause 5 (Data Protection) is limited to three million pounds (£3,000,000)',
     secrets: ' Obligations in respect of trade secrets continue for as long as the information remains a trade secret.' });
+  /* v5, their second turn: it reopens two points agreed in v4 (payment, and the data cap, rewritten at length), moves governing law and uptime
+     off what had stood since v2, and moves breach notice, which is still open — the deviations demo */
+  const v5 = msa({ ...base, notice: 'ninety (90) days', pay: sw('forty-five (45) days', 'sixty (60) days'), uplift: 'Fees are fixed for the initial term and may increase on renewal by no more than CPI.',
+    sla: sw('99.9%', '99.95%'), breach: sw('within forty-eight (48) hours', 'within thirty-six (36) hours'), cap: 'one hundred and fifty per cent (150%) of the fees paid and payable in the twelve (12) months before the claim',
+    /* the data cap, rewritten: wider, per claim, and outside the general cap — the long deviation */
+    superCap: sw(', save that Provider’s liability for breach of clause 5 (Data Protection) is limited to three million pounds (£3,000,000)', ', save that Provider’s liability for any breach of clause 5 (Data Protection) or clause 6 (Confidentiality), and for any claim arising from a Personal Data Breach, is limited to three million pounds (£3,000,000) per claim and does not count towards the cap in this clause'),
+    secrets: ' Obligations in respect of trade secrets continue for as long as the information remains a trade secret.',
+    law: sw('England and Wales', 'Scotland'), courts: sw('courts of England and Wales', 'Court of Session in Edinburgh') });
   const dpa = (o) => [
     T('Data Processing Addendum'), M('FORMS PART OF THE MASTER SERVICES AGREEMENT'),
     H('1. Processing Instructions'), P('Provider will process Customer Personal Data only on Customer’s documented instructions, set out in the Agreement and this Addendum.'),
@@ -444,11 +452,14 @@ function mxShowcase(id) {
     P('Customer billing contact: Accounts Payable, Brightwell Energy plc, accounts.payable@brightwell-energy.co.uk.'),
   ];
   const now = Date.now(), at = (days, hh, mm) => { const x = new Date(now - days * 864e5); x.setHours(hh, mm, 0, 0); return x.toISOString(); };
+  /* their second redline came in this morning, after Daniel passed on Marcus's yes */
+  const v5at = (mm) => new Date(Math.max(Date.parse(at(0, 9, 5)) + 36e5, now - 45 * 6e4) + mm * 6e4).toISOString();
   const MSA = { id: 'd1', title: 'Brightwell Energy — Master Services Agreement.docx', source: 'msa-short', versions: [
     { name: 'First draft', by: 'Clavia', when: at(9, 10, 32), file: 'Brightwell Energy — MSA.docx', blocks: v1 },
     { name: 'Sent to Brightwell', by: 'Elena Petrova', when: at(8, 16, 5), file: 'Brightwell Energy — MSA v2.docx', blocks: v2 },
     { name: 'Brightwell’s redline', by: 'Brightwell Energy plc', when: at(5, 11, 40), file: 'BEP MSA - Lumen - BW comments.docx', blocks: v3 },
     { name: 'Our response', by: 'Elena Petrova', when: at(2, 18, 10), file: 'Brightwell Energy — MSA v4.docx', blocks: v4 },
+    { name: 'Brightwell’s second redline', by: 'Brightwell Energy plc', when: v5at(0), file: 'BEP MSA - Lumen - v5 BW comments.docx', blocks: v5, note: 'Their markup, from Fiona Grant' },
   ] };
   const DPA = { id: 'd2', title: 'Brightwell Energy — Data Processing Addendum.docx', source: 'dpa', versions: [
     { name: 'Our draft', by: 'Aisha Rahman', when: at(8, 15, 20), file: 'Brightwell Energy — DPA.docx', blocks: d1 },
@@ -493,11 +504,12 @@ function mxShowcase(id) {
     { who: 'Elena Petrova', kind: 'note', what: '150% cap with a £3m data super-cap, 45-day payment, 48-hour breach notice, CPI on renewal, 90-day notice. Convenience termination and the SLA remedy change struck.', when: at(2, 18, 12), ref: m(4) },
     { who: 'Elena Petrova', ev: 'email', what: 'emailed v4 to Marcus Hale and Fiona Grant', when: at(2, 18, 30), ref: m(4) },
     { who: 'Daniel Okafor', kind: 'reply', what: 'Marcus says the cap and payment terms work. Fiona has one question on the super-cap wording — call with her tomorrow at 10.', when: at(0, 9, 5) },
+    ...mxShowcaseV5(v5at),
   ];
   const r = { id, title: 'Enterprise MSA for Brightwell Energy', type: 'Drafting', counterparty: 'Brightwell Energy plc', deal: 'Brightwell — enterprise rollout',
     team: 'Sales', submitter: 'Daniel Okafor', attorney: 'Elena Petrova', urgent: true, status: 'progress', stage: 2, template: 'msa-short',
     due: (() => { const x = new Date(); x.setDate(x.getDate() + 4); x.setHours(17, 0, 0, 0); return x.toISOString(); })(),
-    created: at(9, 10, 28), updated: at(0, 9, 5), triaged: true, address: '40 Holborn Viaduct, London EC1N 2PB, United Kingdom', purpose: 'Enterprise rollout of the Analytics Platform',
+    created: at(9, 10, 28), updated: v5at(2), triaged: true, address: '40 Holborn Viaduct, London EC1N 2PB, United Kingdom', purpose: 'Enterprise rollout of the Analytics Platform',
     detail: 'Brightwell Energy are rolling the Analytics Platform out to 400 users across generation and retail. We need our MSA, DPA and Order Form agreed before their board signs off on 14 November. Marcus Hale leads procurement; their lawyer is Fiona Grant.',
     documents, activity,
     people: [
@@ -604,6 +616,73 @@ const MX_ROUNDS = {
       { term: 'Governing law', brief: 'Scotland', clause: 'Governing Law', html: 'governed by the laws of <del>England and Wales</del><ins>Scotland</ins>, and the <del>courts of England and Wales</del><ins>Court of Session in Edinburgh</ins>', playbook: 'within', why: 'Any UK law is fine', suggest: { d: 'accept' }, decision: { d: 'accept' } },
     ] }],
   },
+};
+
+/* ── Brightwell's v5: what it adds to the request, shared by the seed and by the
+   one-off top-up for browsers that seeded Brightwell before v5 existed ── */
+function mxShowcaseV5(at) {
+  return [
+    { who: 'Elena Petrova', ev: 'version', what: 'uploaded v5 of Brightwell Energy — Master Services Agreement', when: at(0), ref: { doc: 'd1', v: 5 } },
+    { who: 'Clavia', ev: 'clavia', what: 'checked Brightwell’s v5 against what was already agreed: 4 deviations, 2 of them reopen points agreed in v4', when: at(2), ref: { doc: 'd1', v: 5 } },
+  ];
+}
+/* their second turn on the MSA, read against the playbook (the Playbook tab) */
+const MX_ROUND_V5 = { v: 5, base: 4, answered: null, points: [
+  { term: 'Payment', brief: '45 days, as agreed in v4', clause: '3. Fees and Payment', html: 'payable within <del>forty-five (45) days</del><ins>sixty (60) days</ins> of the invoice date', playbook: 'outside', why: 'Our floor is 45 days',
+    find: 'sixty (60) days', ours: 'forty-five (45) days', suggest: { d: 'keep' }, decision: null },
+  { term: 'Uptime', brief: '99.9%', clause: '4. Service Levels', html: 'make the Platform available <del>99.9%</del><ins>99.95%</ins> of the time', playbook: 'outside', why: '99.9% is the most we commit to',
+    find: '99.95%', ours: '99.9%', suggest: { d: 'keep' }, decision: null },
+  { term: 'Breach notice', brief: '48 hours', clause: '5. Data Protection', html: 'a Personal Data Breach <del>within forty-eight (48) hours</del><ins>within thirty-six (36) hours</ins>', playbook: 'outside', why: '48 hours is our fallback',
+    find: 'within thirty-six (36) hours', ours: 'within forty-eight (48) hours', suggest: { d: 'keep' }, decision: null },
+  { term: 'Data breach cap', brief: '£3m in the aggregate, for clause 5', clause: '8. Limitation of Liability', html: 'save that Provider’s liability for <del>breach of clause 5 (Data Protection)</del><ins>any breach of clause 5 (Data Protection) or clause 6 (Confidentiality), and for any claim arising from a Personal Data Breach,</ins> is limited to three million pounds (£3,000,000)<ins> per claim and does not count towards the cap in this clause</ins>', playbook: 'outside', why: 'A cap per claim, outside the general cap, has no ceiling',
+    find: ', save that Provider’s liability for any breach of clause 5 (Data Protection) or clause 6 (Confidentiality), and for any claim arising from a Personal Data Breach, is limited to three million pounds (£3,000,000) per claim and does not count towards the cap in this clause', ours: ', save that Provider’s liability for breach of clause 5 (Data Protection) is limited to three million pounds (£3,000,000)', suggest: { d: 'keep' }, decision: null },
+  { term: 'Governing law', brief: 'Scotland', clause: '10. Governing Law', html: 'governed by the laws of <del>England and Wales</del><ins>Scotland</ins>', playbook: 'within', why: 'Any UK law is fine',
+    find: 'Scotland', ours: 'England and Wales', suggest: { d: 'accept' }, decision: null },
+] };
+MX_ROUNDS['Brightwell Energy plc'].d1.push(MX_ROUND_V5);
+
+/* ── deviations: where the other side goes back on something already settled ──
+   Each version they send is read against three records of what was agreed: this
+   document's own thread (a point they took, or ours they left alone in their turn),
+   past contracts with the same client, and precedents. One linear thread of
+   versions; the trail shows how the point moved, so nobody compares by hand.
+   kind: reversal (agreed in this thread) · prior (a past contract with them) · precedent
+   head: what they did, in a line · para: words that find the clause's paragraph in every version · sent: the sentence in it, when the paragraph has others
+   agreed: the version where it closed · from (per document): the first version the thread shows
+   basis: the email that confirmed it (an activity line, matched) · source: the past contract or precedents, by name
+   quote: their words in the text · back: the agreed words once our redline is in
+   edits: [their markup, our redline back], applied to their version by Push back
+   remind: the comment for them, {agreed}/{mail} filled with dates (mock data; nothing is synced) */
+const MX_DEVIATIONS = {
+  showcase: { d1: { v: 5, from: 2,
+    items: [
+      { id: 'dv1', kind: 'reversal', clause: '3. Fees and Payment', term: 'Payment terms', head: 'Payment terms back to 60 days', agreed: 4,
+        para: 'Customer will pay the fees in each Order Form', sent: 'Fees are invoiced annually',
+        basis: [['mail', 'Marcus Hale accepted it by email', /payment terms work/]],
+        quote: 'sixty (60) days', back: 'forty-five (45) days',
+        edits: [['<del>forty-five (45) days</del><ins>sixty (60) days</ins>', '<del class="is-ours">sixty (60) days</del><ins class="is-ours">forty-five (45) days</ins>']],
+        remind: 'Payment terms were agreed at 45 days in v4 on {agreed}, and Marcus confirmed them on {mail}. We have put forty-five (45) days back.' },
+      { id: 'dv2', kind: 'reversal', clause: '8. Limitation of Liability', term: 'Data breach cap', head: 'Widens the £3m cap, makes it per claim, and takes it outside the general cap', agreed: 4,
+        para: 'Neither party excludes liability for death', sent: 'Subject to that',
+        basis: [['mail', 'Marcus Hale accepted the cap by email', /cap and payment terms work/]],
+        quote: 'is limited to three million pounds (£3,000,000) per claim', back: 'Provider’s liability for breach of clause 5 (Data Protection) is limited to three million pounds (£3,000,000)',
+        edits: [['<del>, save that Provider’s liability for breach of clause 5 (Data Protection) is limited to three million pounds (£3,000,000)</del><ins>, save that Provider’s liability for any breach of clause 5 (Data Protection) or clause 6 (Confidentiality), and for any claim arising from a Personal Data Breach, is limited to three million pounds (£3,000,000) per claim and does not count towards the cap in this clause</ins>', '<del class="is-ours">, save that Provider’s liability for any breach of clause 5 (Data Protection) or clause 6 (Confidentiality), and for any claim arising from a Personal Data Breach, is limited to three million pounds (£3,000,000) per claim and does not count towards the cap in this clause</del><ins class="is-ours">, save that Provider’s liability for breach of clause 5 (Data Protection) is limited to three million pounds (£3,000,000)</ins>']],
+        remind: 'The £3m cap for data protection was agreed in v4 on {agreed}: one cap in total, for clause 5 only, inside the general cap. Marcus confirmed it on {mail}. We have put the v4 wording back.' },
+      { id: 'dv3', kind: 'prior', clause: '10. Governing Law', term: 'Governing law', head: 'Governing law moved to Scotland', agreed: 3,
+        para: 'This Agreement is governed by the laws of',
+        source: 'Pilot Services Agreement, March 2025',
+        note: 'The playbook allows any UK law, so this is your call rather than a breach.',
+        quote: 'Scotland, and the Court of Session in Edinburgh', back: 'England and Wales, and the courts of England and Wales',
+        edits: [['<del>England and Wales</del><ins>Scotland</ins>', '<del class="is-ours">Scotland</del><ins class="is-ours">England and Wales</ins>'],
+          ['<del>courts of England and Wales</del><ins>Court of Session in Edinburgh</ins>', '<del class="is-ours">Court of Session in Edinburgh</del><ins class="is-ours">courts of England and Wales</ins>']],
+        remind: 'English law has been in every version since v2, and it governs our Pilot Services Agreement with Brightwell from March 2025. We have put England and Wales back.' },
+      { id: 'dv4', kind: 'precedent', clause: '4. Service Levels', term: 'Uptime', head: 'Uptime raised to 99.95%', agreed: 3,
+        para: 'Provider will make the Platform available', sent: 'Provider will make the Platform available',
+        source: 'Kestrel Freight and Harbor Retail MSAs',
+        quote: '99.95%', back: '99.9%',
+        edits: [['<del>99.9%</del><ins>99.95%</ins>', '<del class="is-ours">99.95%</del><ins class="is-ours">99.9%</ins>']],
+        remind: 'Uptime has stood at 99.9% since v2, and it is what we commit to in every enterprise agreement. We have put 99.9% back.' },
+    ] } },
 };
 
 /* ── tagged comments from the Word plugin (mock data; nothing is synced) ──
