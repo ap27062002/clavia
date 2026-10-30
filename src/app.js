@@ -3876,6 +3876,20 @@ function answer(prompt, files = []) {
      carries a skill runs it (skills.js) */
   if (thread?.id?.startsWith('sk-ses-') && typeof skBuildTurn === 'function') return skBuildTurn(ARTIFACTS[thread.id.slice(7)], prompt);
   if (typeof skillAnswer === 'function' && skillAnswer(prompt)) return;
+  /* The asks that name outright what they want, taken before anything
+     reads the conversation for what it is about: a template taken out of
+     a signed agreement, a deal pack, a document tagged onto a request.
+     Each names its own thing in so many words — "out of the signed
+     Harbor NDA", "a deal pack", "tag this onto RQ-1047" — so it is safe
+     to read them before the conversation's subject. Each returns false
+     otherwise, and everything else carries on down.
+
+     The contract summary is deliberately NOT here: it answers to bare
+     phrases like "key terms" and "break it down", which a template or a
+     request conversation uses about its own paper. */
+  if (typeof tplPrecAnswer === 'function' && tplPrecAnswer(prompt, files)) return;
+  if (typeof packAnswer === 'function' && packAnswer(prompt)) return;
+  if (typeof rqTagTurn === 'function' && rqTagTurn(prompt)) return;
   /* A conversation about a template is asked about that template, with
      whatever was handed over in the box. Read off the conversation's own
      name rather than the last artifact somebody mentioned in it: a
@@ -3883,6 +3897,9 @@ function answer(prompt, files = []) {
      and the ask would otherwise fall through to building something. */
   const onTpl = thread?.id?.startsWith('tpl-ses-') ? ARTIFACTS['template-' + thread.id.slice(8)] : null;
   if (onTpl && typeof templateTurn === 'function') return templateTurn(onTpl, prompt, files);
+  /* a conversation filling in a draft made from a template is about that
+     draft: the blanks still open, and the ones this sentence just gave */
+  if (typeof tplDraftTurn === 'function' && tplDraftTurn(prompt, files)) return;
   /* a conversation working on a playbook is asked about that playbook */
   const onPb = ARTIFACTS[lastArtifactIn()];
   if (onPb?.kind === 'playbook' && typeof playbookTurn === 'function') return playbookTurn(onPb, prompt);
@@ -3890,6 +3907,21 @@ function answer(prompt, files = []) {
   /* a conversation building a request answers as the request */
   const onRq = thread?.id?.startsWith('rq-ses-') ? ARTIFACTS[thread.id.slice(7)] : null;
   if ((onRq || onPb)?.kind === 'request' && typeof requestTurn === 'function') return requestTurn(onRq || onPb, prompt);
+  /* a contract summary, once nothing above has claimed the ask. Below the
+     handlers above because "what are the key terms" belongs to whatever
+     paper the conversation is already about, and only means this feature
+     in a conversation that is not about one */
+  if (typeof sumTurn === 'function' && sumTurn(prompt, files)) return;
+  /* a conversation holding a document somebody handed over works on that
+     document, and falls through to an ordinary answer when the ask is a
+     question about it rather than a change to it */
+  if (typeof docUploadTurn === 'function' && docUploadTurn(prompt, files)) return;
+  /* a calendar of renewals, and the follow-ups that filter one already made */
+  if (typeof renewalAnswer === 'function' && renewalAnswer(prompt)) return;
+  /* a memo or an issues list set to a named house format, and every later
+     ask to set one differently. Last of these: it also answers what is
+     asked of a document it set itself, so it reads widest. */
+  if (typeof formatTurn === 'function' && formatTurn(onPb, prompt, files)) return;
   const who = taggedPerson(prompt);
   if (!who) return botTurn(prompt);
   if (peerRunning) return;

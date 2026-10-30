@@ -559,7 +559,12 @@ function renderDoc(a) {
     const r = mark.getBoundingClientRect();
     const pop = h('div', { class: 'doc-rl-pop' },
       h('button', { class: 'doc-rl-act', type: 'button', onclick: () => { pop.remove(); settle(id, 'reject'); } }, 'Reject'),
-      h('button', { class: 'doc-rl-act is-yes', type: 'button', onclick: () => { pop.remove(); settle(id, 'accept'); } }, 'Accept'));
+      h('button', { class: 'doc-rl-act is-yes', type: 'button', onclick: () => { pop.remove(); settle(id, 'accept'); } }, 'Accept'),
+      /* one change is a thing somebody has to answer, so it can go onto a
+         request on its own rather than only with the whole document */
+      typeof rqTagChange === 'function'
+        ? h('button', { class: 'doc-rl-act', type: 'button', onclick: () => { pop.remove(); rqTagChange(a, id); } }, 'Tag')
+        : null);
     document.querySelectorAll('.doc-rl-pop').forEach(n => n.remove());
     document.body.append(pop);
     pop.style.left = Math.max(10, Math.min(r.left, innerWidth - pop.offsetWidth - 10)) + 'px';
@@ -1483,7 +1488,9 @@ const stripTags = (v) => {
 function copyArtifact(a) {
   let text, said;
 
-  if (a.kind === 'sheet') {
+  /* an issues list carries its rows in the shape a sheet does, so it
+     copies out as the same tab-separated table */
+  if (a.kind === 'sheet' || a.kind === 'issues') {
     const sh = bodyOf(a, 'sheets')[0];
     text = [sh.cols, ...sh.rows].map(r => r.join('\t')).join('\n');
     said = `Copied ${sh.rows.length} rows from ${sh.name}.`;
@@ -2526,12 +2533,19 @@ function commentLayer(a, shell) {
 
 function exportControl(a) {
   const cfg = EXPORT[a.kind];
+  /* a kind with nowhere declared to send it gets no control at all,
+     rather than a half-drawn one. Callers already guard on EXPORT; this
+     is the floor under them, so a kind added without an EXPORT entry
+     cannot take the whole artifact header down with it. */
+  if (!cfg || !DEST[cfg.primary]) return null;
   const pri = DEST[cfg.primary];
 
   const act = (key, verb) => {
     const d = DEST[key];
     /* the one export that can actually happen in a browser, does */
     if (key === 'clipboard') return copyArtifact(a);
+    /* a kind that can write its own file writes it, rather than promising to */
+    if (typeof artExport === 'function' && artExport(a, key, verb)) return;
     toast(verb === 'open'
       ? `Opening in ${d.label} comes in the next pass.`
       : verb === 'send'
@@ -3284,6 +3298,10 @@ function openArtifact(a, { full = false } = {}) {
             h('span', { class: 'ver-row-when' }, v.when),
             v.name ? h('span', { class: 'ver-row-what' }, v.name) : null))));
       document.body.append(sub);
+      /* two versions can also be read against each other, not only one at
+         a time. It goes on after the append because the measurements
+         below place the cascade and have to see this row in it. */
+      if (typeof artCompareMenu === 'function') artCompareMenu(sub, a);
       const r = rowEl.getBoundingClientRect();
       const w = sub.offsetWidth, hgt = sub.offsetHeight;
       sub.style.left = (r.right + 4 + w > innerWidth - 12 ? r.left - w - 4 : r.right + 4) + 'px';
@@ -3345,7 +3363,10 @@ function openArtifact(a, { full = false } = {}) {
 
     const el = h('div', { class: 'menu ver-menu', role: 'dialog', 'aria-label': 'Version history' },
       h('div', { class: 'ver-head' }, 'Version history'),
-      h('div', { class: 'ver-list' }, rows));
+      h('div', { class: 'ver-list' }, rows),
+      /* docked there is no name menu to hang it off, so the way into
+         reading two versions against each other is the foot of this */
+      typeof artCompareFoot === 'function' ? artCompareFoot(a) : null);
     document.body.append(el);
     openMenu = el;
     const r = anchor.getBoundingClientRect();
@@ -3525,6 +3546,9 @@ function openArtifact(a, { full = false } = {}) {
            there is no conversation here */
         full ? null : vBtn,
         ...(made.extras || []),
+        /* anything on the canvas can be tagged onto the request it belongs
+           to, so the way to do it sits with the rest of the controls */
+        ...(typeof rqTagExtras === 'function' ? rqTagExtras(a) : []),
         /* Docked, the chat it would edit in is already the thing beside
            it, and the button collapses the panel rather than going
            anywhere — so where the full-screen toggle is, this is not.
