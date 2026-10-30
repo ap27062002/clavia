@@ -3092,7 +3092,17 @@ function botTurn(prompt) {
   const to = cmt && ARTIFACTS[cmt.id] ? renameTo(prompt.trim()) : null;
 
   /* an update works on the thing this conversation already made */
-  const upd = !to && UPDATE_MATCH.test(prompt.toLowerCase()) ? lastArtifactIn() : null;
+  /* A document takes an edit asked for in plain words — soften this,
+     change X to Y — without the word "update" in it, but only when the
+     ask actually means something against the words on the page. Nothing
+     to do and it falls through to a normal answer rather than a version
+     number with no change under it. */
+  /* what is open beside the conversation first, and only then what was
+     last named in it */
+  const lastArt = (typeof openArtifactNow !== 'undefined' && openArtifactNow?.id) || lastArtifactIn();
+  const docEdit = !to && ARTIFACTS[lastArt]?.kind === 'doc' && typeof docEditPlan === 'function'
+    ? docEditPlan(ARTIFACTS[lastArt], prompt) : null;
+  const upd = !to && (docEdit || UPDATE_MATCH.test(prompt.toLowerCase())) ? lastArt : null;
   const plan = to
     ? [{ source: 'edit', query: `\u201c${cmt.where}\u201d \u2192 \u201c${to}\u201d`, count: 'text only' }]
     : upd
@@ -3130,11 +3140,21 @@ function botTurn(prompt) {
          show the change rather than wait to be reopened */
       if (document.getElementById('main')?.dataset.artifact === 'open') openArtifact(art);
     } else if (upd) {
-      const n = bumpVersion(ARTIFACTS[upd], { by: 'Assistant' });
-      m.text = UPDATE_BUILD.answer;
+      /* A document asked to change shows the change: the words that go
+         and the words that come in, struck and set out where they are,
+         for somebody to accept or reject. Anything else is a version
+         number and the page carries the difference itself. */
+      const art = ARTIFACTS[upd], rl = docEdit;
+      const n = rl ? docRedline(art, rl.edits, { name: rl.name }) : bumpVersion(art, { by: 'Assistant' });
+      m.text = rl
+        ? `${rl.say}\n\nThey are in the document as tracked changes — **v${n}**. `
+          + 'Accept or reject them one at a time, or take them all at once; '
+          + `v${(n || 2) - 1} stays in the history either way.`
+        : UPDATE_BUILD.answer;
       m.cites = null;
       m.artifact = upd;
       m.steps[m.steps.length - 1].count = 'Version ' + (n || 2);
+      if (rl && document.getElementById('main')?.dataset.artifact === 'open') openArtifact(art);
     } else {
       const found = build ? null : answerFor(prompt.toLowerCase());
       m.text = build ? build.answer : found.say;

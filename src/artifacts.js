@@ -409,10 +409,165 @@ const DOC = defineArtifact({
   ],
 });
 
+/* ── what a plain-language ask means for this document ────────
+   No model behind it, so three kinds of ask are carried out against the
+   words that are there — soften a sentence, tighten it, or swap one
+   term for another — and anything else is left alone rather than
+   guessed at, so the chat can say so instead of inventing an edit. */
+const DOC_SOFT = [[/\bshall\b/g, 'will'], [/\bmust\b/g, 'should'],
+  [/\bno later than\b/gi, 'by'], [/\bin no event\b/gi, 'not']];
+function docEditPlan(a, prompt) {
+  const blocks = bodyOf(a, 'blocks') || [];
+  const q = String(prompt || '');
+  const texts = blocks.map((b, i) => ({ i, b, s: DOC_RL_TEXT.has(b.t) && typeof b.v === 'string' ? docPlain(b.v) : '' }));
+  const body = texts.filter(x => x.s.trim() && x.b.t === 'p');
+
+  /* "change X to Y" — the one ask that names both sides of itself */
+  const swap = /(?:change|replace|swap)\s+["“']?(.+?)["”']?\s+(?:to|with|for)\s+["“']?(.+?)["”']?\.?$/i.exec(q);
+  if (swap) {
+    const [, from, to] = swap;
+    const re = new RegExp(from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    const edits = body.filter(x => re.test(x.s)).map(x => ({ i: x.i, to: x.s.replace(re, to) }));
+    if (edits.length) return { edits, name: `${from} → ${to}`,
+      say: `Changed ${mdQ(from)} to ${mdQ(to)} in ${edits.length === 1 ? 'one place' : edits.length + ' places'}.` };
+  }
+  /* soften: the words that commit us, made lighter */
+  if (/\bsoft(en|er)|less (firm|strong|aggressive)|more (friendly|neutral)|tone (it )?down\b/i.test(q)) {
+    const edits = [];
+    for (const x of body) {
+      let to = x.s;
+      for (const [re, w] of DOC_SOFT) to = to.replace(re, w);
+      if (to !== x.s) edits.push({ i: x.i, to });
+    }
+    if (edits.length) return { edits, name: 'Softened the wording',
+      say: `Softened the wording in ${edits.length === 1 ? 'one paragraph' : edits.length + ' paragraphs'} — shall to will, must to should.` };
+  }
+  /* tighten: the last sentence of the longest paragraph goes */
+  if (/\bshort(er|en)?|tighten|tighter|concise|trim|cut\b/i.test(q)) {
+    const long = body.filter(x => (x.s.match(/[.!?]\s/g) || []).length >= 1)
+      .sort((p, n) => n.s.length - p.s.length)[0];
+    if (long) {
+      const ss = long.s.match(/[^.!?]+[.!?]+\s*/g) || [];
+      if (ss.length > 1) return { edits: [{ i: long.i, to: ss.slice(0, -1).join('').trim() }],
+        name: 'Tightened a paragraph',
+        say: 'Cut the last sentence of the longest paragraph — it was restating what the one before it already said.' };
+    }
+  }
+  return null;
+}
+const mdQ = (x) => '\u201c' + x + '\u201d';
+
+/* ── tracked changes on a document ────────────────────────────
+   A block already holds markup rather than plain text, so a redline
+   needs no new shape: the changed words are wrapped in <ins> and <del>
+   inside the block that holds them, each pair under one id so the two
+   halves resolve together. Accepting keeps the inserted words and drops
+   the struck ones; rejecting does the reverse. Nothing is settled until
+   somebody says so, and the version before it stays in the history. */
+const DOC_RL_TEXT = new Set(['p', 'h1', 'h2', 'quote']);
+let docRlSeq = 0;
+
+/* propose a set of changes: edits is [{ i, to }] against the blocks as
+   they stand. Returns the number of the version that carries them. */
+function docRedline(a, edits, meta = {}) {
+  const now = bodyOf(a, 'blocks');
+  if (!now) return null;
+  const marked = now.map((b, i) => ({ ...b }));
+  let n = 0;
+  for (const { i, to } of edits) {
+    const b = marked[i];
+    if (!b || !DOC_RL_TEXT.has(b.t) || typeof b.v !== 'string') continue;
+    const from = docPlain(b.v);
+    if (from === to) continue;
+    /* the words that go and the words that come in their place are one
+       change, so they carry one id and are answered together */
+    const segs = redlineOf(from, to);
+    let out = '';
+    for (let k = 0; k < segs.length; k++) {
+      if (segs[k][0] === 't') { out += docEsc(segs[k][1]); continue; }
+      const id = ++docRlSeq;
+      out += `<${segs[k][0]} data-rl="${id}">${docEsc(segs[k][1])}</${segs[k][0]}>`;
+      if (segs[k][0] === 'del' && segs[k + 1]?.[0] === 'ins') {
+        k++;
+        out += `<ins data-rl="${id}">${docEsc(segs[k][1])}</ins>`;
+      }
+    }
+    b.v = out;
+    n++;
+  }
+  if (!n) return null;
+  return bumpVersion(a, { by: 'Assistant', ...meta }, { blocks: marked });
+}
+const docEsc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+/* a block's words with any markup taken off, which is what a diff reads */
+function docPlain(html) {
+  const d = document.createElement('div');
+  d.innerHTML = String(html);
+  return d.textContent;
+}
+/* every change still waiting on an answer, by id */
+function docPending(a) {
+  const blocks = bodyOf(a, 'blocks') || [];
+  const ids = new Set();
+  for (const b of blocks) {
+    if (typeof b.v !== 'string') continue;
+    for (const m of b.v.matchAll(/data-rl="(\d+)"/g)) ids.add(m[1]);
+  }
+  return [...ids];
+}
+/* accept or reject one change, or every one of them */
+function docResolve(a, id, how) {
+  const blocks = bodyOf(a, 'blocks') || [];
+  const keep = how === 'accept' ? 'ins' : 'del';
+  for (const b of blocks) {
+    if (typeof b.v !== 'string' || !b.v.includes('data-rl')) continue;
+    const d = document.createElement('div');
+    d.innerHTML = b.v;
+    for (const el of [...d.querySelectorAll('ins[data-rl], del[data-rl]')]) {
+      if (id && el.dataset.rl !== id) continue;
+      if (el.tagName.toLowerCase() === keep) el.replaceWith(document.createTextNode(el.textContent));
+      else el.remove();
+    }
+    b.v = d.innerHTML;
+  }
+}
+
 function renderDoc(a) {
   const blocks = bodyOf(a, 'blocks');
   const page = h('div', { class: 'doc-page' });
-  const scroll = h('div', { class: 'doc-scroll' }, page);
+  /* what is still waiting on an answer, said once over the document
+     rather than beside every change */
+  const bar = h('div', { class: 'doc-rl-bar', hidden: true });
+  const repaint = () => { if (document.getElementById('main')?.dataset.artifact === 'open') openArtifact(a); };
+  const settle = (id, how) => { docResolve(a, id, how); repaint(); };
+  const paintBar = () => {
+    const open = docPending(a);
+    bar.hidden = !open.length;
+    if (!open.length) return;
+    bar.replaceChildren(
+      h('span', { class: 'doc-rl-n' }, `${open.length} proposed change${open.length > 1 ? 's' : ''}`),
+      h('span', { class: 'pb-grow' }),
+      h('button', { class: 'doc-rl-act', type: 'button', onclick: () => settle(null, 'reject') }, 'Reject all'),
+      h('button', { class: 'doc-rl-act is-yes', type: 'button', onclick: () => settle(null, 'accept') }, 'Accept all'));
+  };
+  /* a change answers where it stands: the pair resolves together */
+  page.addEventListener('click', (e) => {
+    const mark = e.target.closest('ins[data-rl], del[data-rl]');
+    if (!mark || !page.contains(mark)) return;
+    e.preventDefault();
+    const id = mark.dataset.rl;
+    const r = mark.getBoundingClientRect();
+    const pop = h('div', { class: 'doc-rl-pop' },
+      h('button', { class: 'doc-rl-act', type: 'button', onclick: () => { pop.remove(); settle(id, 'reject'); } }, 'Reject'),
+      h('button', { class: 'doc-rl-act is-yes', type: 'button', onclick: () => { pop.remove(); settle(id, 'accept'); } }, 'Accept'));
+    document.querySelectorAll('.doc-rl-pop').forEach(n => n.remove());
+    document.body.append(pop);
+    pop.style.left = Math.max(10, Math.min(r.left, innerWidth - pop.offsetWidth - 10)) + 'px';
+    pop.style.top = (r.bottom + 6) + 'px';
+    const away = (ev) => { if (!pop.contains(ev.target)) { pop.remove(); removeEventListener('pointerdown', away, true); } };
+    setTimeout(() => addEventListener('pointerdown', away, true), 0);
+  });
+  const scroll = h('div', { class: 'doc-scroll' }, bar, page);
 
   /* which section the reader is in, so a comment can name it */
   let here = 'the document';
@@ -453,6 +608,7 @@ function renderDoc(a) {
   };
 
   paint();
+  paintBar();
   return { body: scroll, where: () => here };
 }
 
@@ -2979,6 +3135,11 @@ MAIL.versions = [
 
 const RENDER = { deck: renderDeck, sheet: renderSheet, doc: renderDoc, app: renderApp, mail: renderMail };
 
+/* What is on the canvas right now. The chat used to work this out by
+   scanning the transcript for the last artifact anybody mentioned, which
+   is wrong whenever a conversation arrived with its artifact already
+   beside it and never named it in a message. */
+let openArtifactNow = null;
 let openKeyHandler = null;
 /* Closing empties the panel on a delay so the slide-out has something to
    slide. Open something new inside that window — Edit with Chat does, because
@@ -2994,12 +3155,14 @@ function openArtifact(a, { full = false } = {}) {
   if (!a) return;
 
   const made = RENDER[a.kind](a);
+  openArtifactNow = a;
   const body = made.body ?? made;   // deck returns a bundle, the rest return a node
 
   /* ── constructs every kind gets, wired once ── */
   const tb = selectionToolbar(body);
 
   const close = closeArtifact = () => {
+    openArtifactNow = null;
     if (openKeyHandler) document.removeEventListener('keydown', openKeyHandler);
     openKeyHandler = null;
     tb.destroy();

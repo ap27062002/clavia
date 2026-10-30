@@ -25,6 +25,47 @@
    Loaded before app.js; runs at call time.
 ================================================================== */
 
+/* ── one word-by-word diff for the whole app ──────────────────
+ Their words against ours, in the shape a saved redline has:
+ [['t'|'del'|'ins', text], …]. It lived inside reviewPage, which meant
+ the chat could not reach it and would have had to grow a second one.
+ It is pure — two strings in, segments out — so it sits out here. */
+function redlineOf(from, to) {
+  if (!from.trim()) return [['ins', to]];
+  const a = from.split(/(\s+)/).filter(Boolean), b = to.split(/(\s+)/).filter(Boolean);
+  const L = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1));
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--)
+    L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const out = [];
+  const put = (k, t) => { const last = out[out.length - 1]; if (last && last[0] === k) last[1] += t; else out.push([k, t]); };
+  let i = 0, j = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { put('t', a[i]); i++; j++; }
+    else if (L[i + 1][j] >= L[i][j + 1]) put('del', a[i++]);
+    else put('ins', b[j++]);
+  }
+  while (i < a.length) put('del', a[i++]);
+  while (j < b.length) put('ins', b[j++]);
+  /* changes with only a space between them are one change: struck together, then set out together */
+  const merged = [];
+  for (let n = 0; n < out.length; n++) {
+    if (out[n][0] === 't') { merged.push(out[n]); continue; }
+    let del = '', ins = '';
+    for (; n < out.length; n++) {
+      const [k, t] = out[n];
+      if (k === 'del') del += t;
+      else if (k === 'ins') ins += t;
+      else if (!t.trim() && n + 1 < out.length && out[n + 1][0] !== 't') { del += t; ins += t; }
+      else { n--; break; }
+    }
+    if (del) merged.push(['del', del]);
+    if (ins) merged.push(['ins', ins]);
+  }
+  /* a rewrite reads better struck whole and set out again than as a dozen small cuts */
+  if (merged.filter(x => x[0] !== 't').length > 6) return [['del', from], ['ins', '\n' + to]];
+  return merged;
+}
+
 function reviewPage(req, onStatus) {
   const A = JV_REVIEWS[req.review];
   const J = (cls) => (cls ? cls.split(/\s+/).filter(Boolean).map(c => 'jv-' + c).join(' ') : '');
@@ -472,42 +513,6 @@ function reviewPage(req, onStatus) {
       return ss.length > 1 ? tidyText(ss.slice(0, -1).join('')) : null;
     }
     return null;
-  }
-  /* their words against ours, word by word, in the shape a saved redline has */
-  function redlineOf(from, to) {
-    if (!from.trim()) return [['ins', to]];
-    const a = from.split(/(\s+)/).filter(Boolean), b = to.split(/(\s+)/).filter(Boolean);
-    const L = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1));
-    for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--)
-      L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
-    const out = [];
-    const put = (k, t) => { const last = out[out.length - 1]; if (last && last[0] === k) last[1] += t; else out.push([k, t]); };
-    let i = 0, j = 0;
-    while (i < a.length && j < b.length) {
-      if (a[i] === b[j]) { put('t', a[i]); i++; j++; }
-      else if (L[i + 1][j] >= L[i][j + 1]) put('del', a[i++]);
-      else put('ins', b[j++]);
-    }
-    while (i < a.length) put('del', a[i++]);
-    while (j < b.length) put('ins', b[j++]);
-    /* changes with only a space between them are one change: struck together, then set out together */
-    const merged = [];
-    for (let n = 0; n < out.length; n++) {
-      if (out[n][0] === 't') { merged.push(out[n]); continue; }
-      let del = '', ins = '';
-      for (; n < out.length; n++) {
-        const [k, t] = out[n];
-        if (k === 'del') del += t;
-        else if (k === 'ins') ins += t;
-        else if (!t.trim() && n + 1 < out.length && out[n + 1][0] !== 't') { del += t; ins += t; }
-        else { n--; break; }
-      }
-      if (del) merged.push(['del', del]);
-      if (ins) merged.push(['ins', ins]);
-    }
-    /* a rewrite reads better struck whole and set out again than as a dozen small cuts */
-    if (merged.filter(x => x[0] !== 't').length > 6) return [['del', from], ['ins', '\n' + to]];
-    return merged;
   }
   /* the wordings on offer, with any that have been edited standing in for the original */
   const edited = (key, opts) => opts.map(o => R.edits[key]?.[o.key] ? { ...o, ...R.edits[key][o.key] } : o);
