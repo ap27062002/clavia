@@ -62,7 +62,7 @@ const NAV = [
   { id: 'templates', label: 'Templates',   icon: 'templates' },
   { id: 'intake',    label: typeof INTAKE_NAME !== 'undefined' ? INTAKE_NAME : 'Requests',    icon: 'intake' },     // what the business asks legal for; to be defined
   { id: 'agents',    label: 'Agents',      icon: 'agents' },     // to be defined (15 Oct): the nav item and an empty page for now
-  { id: 'vault',     label: 'Vault',       icon: 'vault' },
+  { id: 'vault',     label: 'Repository',  icon: 'repository' },   // the Repository prototype took Vault's place (22 Oct); repository.js
   ...(SHOW_SKILLS ? [{ id: 'skills',    label: 'Skills',      icon: 'skills' }] : []),      // how we do a piece of work, written down once (skills.js); off for now
   { id: 'requests',  label: 'Contracts',   icon: 'requests' },   // the module once called Requests; ids and routes keep the old name
   /* hidden for now (16 Oct); the view and #horizon still work */
