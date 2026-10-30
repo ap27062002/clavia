@@ -3092,7 +3092,17 @@ function botTurn(prompt) {
   const to = cmt && ARTIFACTS[cmt.id] ? renameTo(prompt.trim()) : null;
 
   /* an update works on the thing this conversation already made */
-  const upd = !to && UPDATE_MATCH.test(prompt.toLowerCase()) ? lastArtifactIn() : null;
+  /* A document takes an edit asked for in plain words — soften this,
+     change X to Y — without the word "update" in it, but only when the
+     ask actually means something against the words on the page. Nothing
+     to do and it falls through to a normal answer rather than a version
+     number with no change under it. */
+  /* what is open beside the conversation first, and only then what was
+     last named in it */
+  const lastArt = (typeof openArtifactNow !== 'undefined' && openArtifactNow?.id) || lastArtifactIn();
+  const docEdit = !to && ARTIFACTS[lastArt]?.kind === 'doc' && typeof docEditPlan === 'function'
+    ? docEditPlan(ARTIFACTS[lastArt], prompt) : null;
+  const upd = !to && (docEdit || UPDATE_MATCH.test(prompt.toLowerCase())) ? lastArt : null;
   const plan = to
     ? [{ source: 'edit', query: `\u201c${cmt.where}\u201d \u2192 \u201c${to}\u201d`, count: 'text only' }]
     : upd
@@ -3130,11 +3140,21 @@ function botTurn(prompt) {
          show the change rather than wait to be reopened */
       if (document.getElementById('main')?.dataset.artifact === 'open') openArtifact(art);
     } else if (upd) {
-      const n = bumpVersion(ARTIFACTS[upd], { by: 'Assistant' });
-      m.text = UPDATE_BUILD.answer;
+      /* A document asked to change shows the change: the words that go
+         and the words that come in, struck and set out where they are,
+         for somebody to accept or reject. Anything else is a version
+         number and the page carries the difference itself. */
+      const art = ARTIFACTS[upd], rl = docEdit;
+      const n = rl ? docRedline(art, rl.edits, { name: rl.name }) : bumpVersion(art, { by: 'Assistant' });
+      m.text = rl
+        ? `${rl.say}\n\nThey are in the document as tracked changes — **v${n}**. `
+          + 'Accept or reject them one at a time, or take them all at once; '
+          + `v${(n || 2) - 1} stays in the history either way.`
+        : UPDATE_BUILD.answer;
       m.cites = null;
       m.artifact = upd;
       m.steps[m.steps.length - 1].count = 'Version ' + (n || 2);
+      if (rl && document.getElementById('main')?.dataset.artifact === 'open') openArtifact(art);
     } else {
       const found = build ? null : answerFor(prompt.toLowerCase());
       m.text = build ? build.answer : found.say;
@@ -3856,6 +3876,20 @@ function answer(prompt, files = []) {
      carries a skill runs it (skills.js) */
   if (thread?.id?.startsWith('sk-ses-') && typeof skBuildTurn === 'function') return skBuildTurn(ARTIFACTS[thread.id.slice(7)], prompt);
   if (typeof skillAnswer === 'function' && skillAnswer(prompt)) return;
+  /* The asks that name outright what they want, taken before anything
+     reads the conversation for what it is about: a template taken out of
+     a signed agreement, a deal pack, a document tagged onto a request.
+     Each names its own thing in so many words — "out of the signed
+     Harbor NDA", "a deal pack", "tag this onto RQ-1047" — so it is safe
+     to read them before the conversation's subject. Each returns false
+     otherwise, and everything else carries on down.
+
+     The contract summary is deliberately NOT here: it answers to bare
+     phrases like "key terms" and "break it down", which a template or a
+     request conversation uses about its own paper. */
+  if (typeof tplPrecAnswer === 'function' && tplPrecAnswer(prompt, files)) return;
+  if (typeof packAnswer === 'function' && packAnswer(prompt)) return;
+  if (typeof rqTagTurn === 'function' && rqTagTurn(prompt)) return;
   /* A conversation about a template is asked about that template, with
      whatever was handed over in the box. Read off the conversation's own
      name rather than the last artifact somebody mentioned in it: a
@@ -3863,6 +3897,9 @@ function answer(prompt, files = []) {
      and the ask would otherwise fall through to building something. */
   const onTpl = thread?.id?.startsWith('tpl-ses-') ? ARTIFACTS['template-' + thread.id.slice(8)] : null;
   if (onTpl && typeof templateTurn === 'function') return templateTurn(onTpl, prompt, files);
+  /* a conversation filling in a draft made from a template is about that
+     draft: the blanks still open, and the ones this sentence just gave */
+  if (typeof tplDraftTurn === 'function' && tplDraftTurn(prompt, files)) return;
   /* a conversation working on a playbook is asked about that playbook */
   const onPb = ARTIFACTS[lastArtifactIn()];
   if (onPb?.kind === 'playbook' && typeof playbookTurn === 'function') return playbookTurn(onPb, prompt);
@@ -3870,6 +3907,21 @@ function answer(prompt, files = []) {
   /* a conversation building a request answers as the request */
   const onRq = thread?.id?.startsWith('rq-ses-') ? ARTIFACTS[thread.id.slice(7)] : null;
   if ((onRq || onPb)?.kind === 'request' && typeof requestTurn === 'function') return requestTurn(onRq || onPb, prompt);
+  /* a contract summary, once nothing above has claimed the ask. Below the
+     handlers above because "what are the key terms" belongs to whatever
+     paper the conversation is already about, and only means this feature
+     in a conversation that is not about one */
+  if (typeof sumTurn === 'function' && sumTurn(prompt, files)) return;
+  /* a conversation holding a document somebody handed over works on that
+     document, and falls through to an ordinary answer when the ask is a
+     question about it rather than a change to it */
+  if (typeof docUploadTurn === 'function' && docUploadTurn(prompt, files)) return;
+  /* a calendar of renewals, and the follow-ups that filter one already made */
+  if (typeof renewalAnswer === 'function' && renewalAnswer(prompt)) return;
+  /* a memo or an issues list set to a named house format, and every later
+     ask to set one differently. Last of these: it also answers what is
+     asked of a document it set itself, so it reads widest. */
+  if (typeof formatTurn === 'function' && formatTurn(onPb, prompt, files)) return;
   const who = taggedPerson(prompt);
   if (!who) return botTurn(prompt);
   if (peerRunning) return;
