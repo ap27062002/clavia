@@ -26,6 +26,7 @@ const LINE = {
   artifacts: { file: 'icon-artifacts.svg', shift: '0.75 0' },
   playbooks: { file: 'icon-playbooks.svg' },
   vault:     { file: 'icon-vault.svg' },
+  repository: { file: 'icon-repository.svg' },
   templates: { file: 'icon-templates.svg' },
   requests:  { file: 'icon-requests.svg' },
   intake:    { file: 'icon-intake.svg' },
