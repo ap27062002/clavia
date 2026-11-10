@@ -982,9 +982,13 @@ function buildTemplate(text, files, step) {
     if (++i < steps.length) return setTimeout(tick, 800);
     setTimeout(() => {
       if (state.view !== 'templates' || MX.templates.open !== 'new') return;   // left while it was writing
-      /* a file handed over here is a precedent: the document answers the
-         set questions itself, and only the blanks are asked */
-      if (files.length) return mxTplFromPrecedent(files[0], text);
+      /* A document alone, or one with "convert this" over it, is a
+         precedent: it answers the set questions itself and only the
+         blanks are asked. A document beside a description is reference
+         for a template written from scratch, and the questions stand. */
+      const convert = files.length && (!text
+        || /\b(convert|precedent|placeholders?|turn (this|it)|into a template|from (this|it))\b/i.test(text));
+      if (convert) return mxTplFromPrecedent(files[0], text);
       const t = newTemplate(templateFrom(from, null), true, false);
       mxTplEditInChat(t, mxTplAskSet(t, text, files), true);
     }, 800);
@@ -1066,6 +1070,22 @@ function mxTplFromPrecedent(name, text) {
       return v ? `<del class="mine">${esc(v)}</del>${m}` : m;
     });
   }
+  /* Not only the placeholders: the precedent's own drafting is brought
+     to our standard, each change tracked the same way — what it said
+     struck through, what our paper says inserted beside it — and a
+     deal-specific sentence that has no place in a template struck out
+     whole. (Scripted: the kinds of edit a conversion always makes.) */
+  const DEL = (s) => `<del class="mine">${s}</del>`, INS = (s) => `<ins class="mine">${s}</ins>`;
+  let rewords = 0;
+  for (const b of t.body) {
+    if (b.h !== undefined || rewords >= 2 || !/\bwill\b/.test(b.p)) continue;
+    b.p = b.p.replace(/\bwill\b/, DEL('shall') + INS('will'));
+    rewords++;
+  }
+  const days = t.body.find(b => b.p !== undefined && /\b30 days\b/.test(b.p));
+  if (days) days.p = days.p.replace(/\b30 days\b/, DEL('60 days') + INS('30 days'));
+  const liab = t.body.find(b => b.p !== undefined && /liab/i.test(b.p));
+  if (liab) liab.p += DEL(` Liability for loss of ${esc(co || 'the customer')}’s data is unlimited.`);
   save();
   mxTplEditInChat(t, mxTplAskBlanks(t, name, text), true);
 }
@@ -2410,12 +2430,85 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     'data-tip': 'Go to the first tracked edit — click a mark to accept or reject it',
     onmousedown: (e) => e.preventDefault(),
     onclick: () => marksIn()[0]?.scrollIntoView({ block: 'center', behavior: 'smooth' }) });
+
+  /* ── the changes, as cards beside the document ─────────────────
+     What the redline editor's rail does: every tracked change is a card
+     — what was struck through, what stands in its place — with its own
+     Accept and Reject, and a click that takes you to the words. A
+     deletion and the insertion (or the blank) right after it are one
+     change, so they share a card and are answered together. */
+  let showCards = true;
+  const cmts = h('aside', { class: 'mx-cmts', 'aria-label': 'Tracked changes' });
+  const changeGroups = () => {
+    const out = [], seen = new Set();
+    for (const m of marksIn()) {
+      if (seen.has(m)) continue;
+      let next = m.nextSibling;
+      while (next && next.nodeType === 3 && !next.data.trim()) next = next.nextSibling;
+      let pair = null, chip = null;
+      if (m.tagName === 'DEL' && next?.nodeType === 1) {
+        if (next.matches?.('ins.mine')) { pair = next; seen.add(next); }
+        else if (next.classList?.contains('mx-chip')) chip = next;
+      }
+      out.push({ m, pair, chip });
+    }
+    return out;
+  };
+  const answerGroup = (g, how) => {
+    if (g.pair) { resolveMark(g.m, how, true); resolveMark(g.pair, how); }
+    else resolveMark(g.m, how);
+  };
+  const cmEsc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const cmCut = (x) => x.length > 110 ? x.slice(0, 108).trimEnd() + '…' : x;
+  const cardEl = (g) => {
+    const kind = g.pair ? 'Changed' : g.chip ? 'Made a blank' : g.m.tagName === 'DEL' ? 'Deleted' : 'Inserted';
+    const sec = g.m.closest('.mx-sec');
+    const ref = !sec || sec.classList.contains('is-pre') ? 'Opening'
+      : (sec.querySelector('.mx-sec-n')?.textContent || '') + ' ' + (sec.querySelector('.mx-doc-h')?.textContent.trim() || '');
+    const body = g.pair ? `<del>${cmEsc(cmCut(g.m.textContent))}</del> <ins>${cmEsc(cmCut(g.pair.textContent))}</ins>`
+      : g.chip ? `<del>${cmEsc(cmCut(g.m.textContent))}</del> <span class="mx-cm-chip">${cmEsc(g.chip.textContent)}</span>`
+      : g.m.tagName === 'DEL' ? `<del>${cmEsc(cmCut(g.m.textContent))}</del>`
+      : `<ins>${cmEsc(cmCut(g.m.textContent))}</ins>`;
+    const go = () => {
+      openSection(sec?.dataset.id);
+      g.m.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      docBody.querySelectorAll('.is-hit').forEach(x => x.classList.remove('is-hit'));
+      g.m.classList.add('is-hit'); setTimeout(() => g.m.classList.remove('is-hit'), 1400);
+    };
+    return h('div', { class: 'mx-cm', role: 'button', tabindex: '0', onclick: go,
+      onkeydown: (e) => { if (e.key === 'Enter') go(); } },
+      h('div', { class: 'mx-cm-k' }, h('span', {}, kind), h('span', { class: 'mx-cm-sec' }, ref.trim())),
+      h('div', { class: 'mx-cm-t', html: body }),
+      h('div', { class: 'mx-cm-acts' },
+        h('button', { class: 'doc-rl-act', type: 'button',
+          onclick: (e) => { e.stopPropagation(); answerGroup(g, 'reject'); } }, 'Reject'),
+        h('button', { class: 'doc-rl-act is-yes', type: 'button',
+          onclick: (e) => { e.stopPropagation(); answerGroup(g, 'accept'); } }, 'Accept')));
+  };
+  const paintCards = () => {
+    if (!editable) return;
+    const groups = changeGroups();
+    cmts.replaceChildren(...groups.map(cardEl));
+    docScroll.classList.toggle('has-cards', showCards && groups.length > 0);
+  };
+
   const paintMarks = () => {
     if (!editable) return;
     const n = marksIn().length;
     rbN.hidden = !n;
     if (n) rbN.textContent = mxPlural(n, 'tracked edit');
+    paintCards();
   };
+  const showBtn = h('button', { class: 'mx-rb-b mx-rb-lab', type: 'button', 'aria-pressed': 'true',
+    'data-tip': 'Each tracked change as a card beside the document',
+    onmousedown: (e) => e.preventDefault(),
+    onclick: () => {
+      showCards = !showCards;
+      showBtn.setAttribute('aria-pressed', String(showCards));
+      paintCards();
+    } },
+    h('span', { class: 'mx-rb-ic', html: rbSvg('<path d="M3.5 6h9M3.5 10h9M3.5 14h9M3.5 18h9"/><rect x="15.5" y="7.5" width="6" height="6.5" rx="1.4"/><path d="M15.5 17.5h6"/>') }),
+    h('span', { class: 'mx-rb-l' }, 'Show changes'));
   const trackBtn = h('button', { class: 'mx-rb-b mx-rb-lab', type: 'button', 'aria-pressed': 'false',
     'data-tip': 'Mark your edits until they are accepted or rejected',
     onmousedown: (e) => e.preventDefault(),
@@ -2454,6 +2547,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
       ...alignBtns.map(x => x.el),
       rbSep(),
       rbN,
+      showBtn,
       trackBtn,
       moreBtn));
   /* the pressed states follow the caret */
@@ -2490,7 +2584,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     const away = (ev) => { if (!pop.contains(ev.target)) { pop.remove(); removeEventListener('pointerdown', away, true); } };
     setTimeout(() => addEventListener('pointerdown', away, true), 0);
   });
-  const docScroll = h('div', { class: 'mx-tpl-doc' }, sheet);
+  const docScroll = h('div', { class: 'mx-tpl-doc' }, sheet, editable ? cmts : null);
 
   /* ── the outline follows the reading ── */
   let curSec = null;

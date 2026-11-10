@@ -505,6 +505,34 @@
 }
 /* a highlight from the ribbon */
 .mx-doc .mx-doc-in mark { background: #F4F08A; border-radius: 2px; padding: 0 1px; }
+/* a card's click lands here: the words flash where they stand */
+.mx-doc ins.mine.is-hit, .mx-doc del.mine.is-hit { outline: 2px solid #3D5FA8; outline-offset: 1px; border-radius: 2px; }
+
+/* ── the changes as cards beside the document ──
+   The redline editor's rail: one card per tracked change, each with its
+   own Accept and Reject. Show changes on the band puts it up and away. */
+.mx-tpl-doc.has-cards { display: flex; align-items: flex-start; justify-content: center; gap: 16px; }
+.mx-tpl-doc.has-cards .mx-doc { flex: 0 1 754px; min-width: 0; margin: 0; }
+.mx-tpl-doc:not(.has-cards) .mx-cmts { display: none; }
+.mx-cmts {
+  flex: 0 0 236px; min-width: 0; position: sticky; top: 0;
+  display: flex; flex-direction: column; gap: 10px; padding-top: 44px;
+}
+.mx-tpl.is-in-chat .mx-cmts { flex-basis: 196px; }
+.mx-cm {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 9px 11px 10px; font-size: 12.5px; line-height: 1.45; cursor: pointer; text-align: left;
+  box-shadow: 0 1px 2px rgba(20,20,19,.03);
+  transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
+}
+.mx-cm:hover { border-color: var(--line-strong); box-shadow: 0 2px 8px -4px rgba(20,20,19,.14); }
+.mx-cm-k { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; font-weight: 600; color: #3D5FA8; }
+.mx-cm-sec { font-weight: 450; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx-cm-t { margin: 5px 0 9px; color: var(--text); overflow-wrap: break-word; }
+.mx-cm-t del { color: #3D5FA8; text-decoration: line-through; text-decoration-color: rgba(61,95,168,.75); }
+.mx-cm-t ins { color: #3D5FA8; text-decoration: underline; text-decoration-color: rgba(61,95,168,.55); text-underline-offset: 2px; }
+.mx-cm-chip { border: 1px dashed var(--line-strong); border-radius: 5px; padding: 0 4px; color: var(--text-soft); white-space: nowrap; }
+.mx-cm-acts { display: flex; gap: 6px; justify-content: flex-end; }
 
 /* ── a section on the sheet ──
    No rule under the heading: its chevron sits at the right corner, and a
