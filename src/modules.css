@@ -257,7 +257,8 @@
 }
 .mx-tpl.is-about-hidden .mx-tpl-about { opacity: 0; visibility: hidden; transition: opacity 220ms var(--ease), visibility 0s 360ms; }
 .mx-tpl.is-shell:not(.is-in-chat) .mx-show-about {
-  position: absolute; top: var(--mx-doc-top, 22px); right: 16px; z-index: 3; margin: 0;
+  /* the band, when it is up, is above this corner: the pill steps down below it */
+  position: absolute; top: calc(var(--mx-doc-top, 22px) + var(--mx-band-h, 0px)); right: 16px; z-index: 3; margin: 0;
   opacity: 0; visibility: hidden; transform: translateX(8px);
   transition: opacity 120ms var(--ease), transform 200ms var(--ease), visibility 0s 120ms;
 }
@@ -356,7 +357,8 @@
    the corner of the view — there however far down the document you are,
    the way the playbook's is */
 .mx-tpl.is-shell .mx-show-side {
-  position: absolute; top: var(--mx-doc-top, 22px); left: 16px; z-index: 3; margin: 0;
+  /* the band, when it is up, is above this corner: the pill steps down below it */
+  position: absolute; top: calc(var(--mx-doc-top, 22px) + var(--mx-band-h, 0px)); left: 16px; z-index: 3; margin: 0;
   opacity: 0; visibility: hidden; transform: translateX(-8px);
   transition: opacity 120ms var(--ease), transform 200ms var(--ease), visibility 0s 120ms;
 }
