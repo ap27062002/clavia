@@ -490,23 +490,34 @@
 /* beside a chat there is no room for the labels, only the marks */
 .mx-tpl.is-in-chat .mx-rb-l { display: none; }
 
-/* ── tracked edits on the sheet, in the author's colour ── */
+/* ── tracked edits on the sheet ──
+   Clavia's (a conversion's) read as a redline reads: deletions in red,
+   insertions in green on a green tint. An edit typed on the page is
+   yours, in the author's blue. */
+.mx-doc ins.clavia {
+  color: #2E7D4F; background: #EAF3ED; border-radius: 2px; cursor: pointer;
+  text-decoration: underline; text-decoration-color: rgba(46,125,79,.5); text-decoration-thickness: 1px; text-underline-offset: 3px;
+}
+.mx-doc del.clavia { color: #B4463A; cursor: pointer; text-decoration: line-through; text-decoration-color: rgba(180,70,58,.75); }
 .mx-doc ins.mine {
   color: #3D5FA8; background: rgba(61,95,168,.07); border-radius: 2px; cursor: pointer;
   text-decoration: underline; text-decoration-color: rgba(61,95,168,.55); text-decoration-thickness: 1px; text-underline-offset: 3px;
 }
 .mx-doc del.mine { color: #3D5FA8; cursor: pointer; text-decoration: line-through; text-decoration-color: rgba(61,95,168,.75); }
-.mx-doc ins.mine:hover, .mx-doc del.mine:hover { outline: 2px solid var(--line-strong); outline-offset: 1px; border-radius: 2px; }
+.mx-doc ins.mine:hover, .mx-doc del.mine:hover,
+.mx-doc ins.clavia:hover, .mx-doc del.clavia:hover { outline: 2px solid var(--line-strong); outline-offset: 1px; border-radius: 2px; }
 /* the clean copy reads as if every edit were accepted; a document being
    filled in from the template reads clean always */
-.mx-doc.is-clean del.mine, .mx-doc.is-use del.mine { display: none; }
-.mx-doc.is-clean ins.mine, .mx-doc.is-use ins.mine {
+.mx-doc.is-clean del.mine, .mx-doc.is-use del.mine,
+.mx-doc.is-clean del.clavia, .mx-doc.is-use del.clavia { display: none; }
+.mx-doc.is-clean ins.mine, .mx-doc.is-use ins.mine,
+.mx-doc.is-clean ins.clavia, .mx-doc.is-use ins.clavia {
   color: inherit; background: none; text-decoration: none; cursor: text; outline: none;
 }
 /* a highlight from the ribbon */
 .mx-doc .mx-doc-in mark { background: #F4F08A; border-radius: 2px; padding: 0 1px; }
 /* a mark whose card is open is marked itself */
-.mx-doc ins.mine.is-active, .mx-doc del.mine.is-active { outline: 2px solid var(--line-strong); outline-offset: 1px; border-radius: 2px; }
+.mx-doc ins.is-active, .mx-doc del.is-active { outline: 2px solid var(--line-strong); outline-offset: 1px; border-radius: 2px; }
 
 /* ── the changes as cards beside the document ──
    The redline editor's rail, the way a Word add-in draws it: a quiet
@@ -541,8 +552,13 @@
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden;
 }
 .mx-cm.is-active .mx-cm-text { -webkit-line-clamp: unset; display: block; }
-.mx-cm-text del { color: #3D5FA8; text-decoration: line-through; text-decoration-color: rgba(61,95,168,.75); }
-.mx-cm-text ins {
+.mx-cm-text del.clavia { color: #B4463A; text-decoration: line-through; text-decoration-color: rgba(180,70,58,.75); }
+.mx-cm-text ins.clavia {
+  color: #2E7D4F; background: #EAF3ED; border-radius: 2px;
+  text-decoration: underline; text-decoration-color: rgba(46,125,79,.5); text-underline-offset: 3px;
+}
+.mx-cm-text del.mine { color: #3D5FA8; text-decoration: line-through; text-decoration-color: rgba(61,95,168,.75); }
+.mx-cm-text ins.mine {
   color: #3D5FA8; background: rgba(61,95,168,.07); border-radius: 2px;
   text-decoration: underline; text-decoration-color: rgba(61,95,168,.5); text-underline-offset: 3px;
 }
