@@ -450,6 +450,56 @@
 .mx-add-sec { flex: none; font-size: 13px; margin-left: 2px; }
 .mx-doc-h:empty::before, .mx-doc-p:empty::before { content: attr(data-ph); color: var(--text-faint); }
 
+/* ── the ribbon: the editor's toolbar, under the Sections bar ──
+   The redline editor's toolbar, on the template: undo and redo, the
+   inline formats, indents and alignment; then the tracked edits, Track
+   Changes, Export and the ⋯ menu at the other end. Pinned just under
+   the bar above it, so both ride the scroll together. */
+.mx-ribbon {
+  position: sticky; top: calc(44px - var(--mx-doc-top, 4px)); z-index: 2;
+  display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
+  min-height: 38px; padding: 3px calc(var(--mx-margin) - 7.5px);
+  background: rgba(255,255,255,.95); backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--line-soft);
+}
+.mx-rb-b {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none;
+  min-width: 28px; height: 28px; padding: 0 5px; border: 0; border-radius: 7px;
+  background: none; color: var(--text-soft); cursor: pointer; font: inherit; font-size: 12.5px;
+}
+.mx-rb-b:hover { background: rgba(20,20,19,.06); color: var(--text); }
+.mx-rb-b[aria-pressed="true"] { background: rgba(20,20,19,.08); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+.mx-rb-b svg, .mx-rb-ic svg { width: 16px; height: 16px; display: block; }
+.mx-rb-ic { display: inline-flex; }
+.mx-rb-t { font-size: 13.5px; line-height: 1; width: 15px; text-align: center; }
+.mx-rb-hl { background: #F4F08A; border-radius: 2px; padding: 1px 2px; width: auto; }
+.mx-rb-sep { width: 1px; height: 18px; background: var(--line-soft); margin: 0 4px; flex: none; }
+.mx-rb-lab .mx-rb-l { white-space: nowrap; }
+/* the count of edits still waiting on an answer */
+.mx-rb-n {
+  border: 0; flex: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 550;
+  color: #3D5FA8; background: rgba(61,95,168,.1); border-radius: 999px; padding: 4px 10px; margin-right: 4px;
+}
+.mx-rb-n:hover { background: rgba(61,95,168,.16); }
+/* beside a chat there is no room for the labels, only the marks */
+.mx-tpl.is-in-chat .mx-rb-l { display: none; }
+
+/* ── tracked edits on the sheet, in the author's colour ── */
+.mx-doc ins.mine {
+  color: #3D5FA8; background: rgba(61,95,168,.07); border-radius: 2px; cursor: pointer;
+  text-decoration: underline; text-decoration-color: rgba(61,95,168,.55); text-decoration-thickness: 1px; text-underline-offset: 3px;
+}
+.mx-doc del.mine { color: #3D5FA8; cursor: pointer; text-decoration: line-through; text-decoration-color: rgba(61,95,168,.75); }
+.mx-doc ins.mine:hover, .mx-doc del.mine:hover { outline: 2px solid var(--line-strong); outline-offset: 1px; border-radius: 2px; }
+/* the clean copy reads as if every edit were accepted; a document being
+   filled in from the template reads clean always */
+.mx-doc.is-clean del.mine, .mx-doc.is-use del.mine { display: none; }
+.mx-doc.is-clean ins.mine, .mx-doc.is-use ins.mine {
+  color: inherit; background: none; text-decoration: none; cursor: text; outline: none;
+}
+/* a highlight from the ribbon */
+.mx-doc .mx-doc-in mark { background: #F4F08A; border-radius: 2px; padding: 0 1px; }
+
 /* ── a section on the sheet ──
    No rule under the heading: its chevron sits at the right corner, and a
    delete and an add-a-paragraph-here come up beside it under the pointer. */

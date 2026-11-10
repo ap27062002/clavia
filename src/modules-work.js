@@ -1637,7 +1637,7 @@ function mxDocuments(r) {
 const mxPaperless = (r) => r.type === 'Advice' || (!mxDocuments(r).length && !mxTemplateFor(r) && !MX_CONTRACT_OF[r.counterparty] && r.type !== 'Contract review' && r.type !== 'Privacy' && r.type !== 'NDA' && !r.ingesting);
 
 function mxDraftBlocks(tpl, vals) {
-  const txt = (s) => mxEsc(s).replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => vals[k] ? mxEsc(vals[k]) : `<mark>[${mxEsc(mxFieldLabel(tpl, k))}]</mark>`);
+  const txt = (s) => mxEsc(mxRichPlain(s)).replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => vals[k] ? mxEsc(vals[k]) : `<mark>[${mxEsc(mxFieldLabel(tpl, k))}]</mark>`);
   return [{ t: 'h1', v: mxEsc(tpl.name) }, ...tpl.body.filter(b => (b.h ?? b.p).trim()).map(b => b.h !== undefined ? { t: 'h2', v: txt(b.h) } : { t: 'p', v: txt(b.p) })];
 }
 
