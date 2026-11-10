@@ -1067,7 +1067,7 @@ function mxTplFromPrecedent(name, text) {
     const k2 = b.h !== undefined ? 'h' : 'p';
     b[k2] = b[k2].replace(/\{\{([a-z0-9_]+)\}\}/gi, (m, k) => {
       const v = was(k);
-      return v ? `<del class="mine">${esc(v)}</del>${m}` : m;
+      return v ? `<del class="clavia">${esc(v)}</del>${m}` : m;
     });
   }
   /* Not only the placeholders: the precedent's own drafting is brought
@@ -1075,7 +1075,7 @@ function mxTplFromPrecedent(name, text) {
      struck through, what our paper says inserted beside it — and a
      deal-specific sentence that has no place in a template struck out
      whole. (Scripted: the kinds of edit a conversion always makes.) */
-  const DEL = (s) => `<del class="mine">${s}</del>`, INS = (s) => `<ins class="mine">${s}</ins>`;
+  const DEL = (s) => `<del class="clavia">${s}</del>`, INS = (s) => `<ins class="clavia">${s}</ins>`;
   let rewords = 0;
   for (const b of t.body) {
     if (b.h !== undefined || rewords >= 2 || !/\bwill\b/.test(b.p)) continue;
@@ -1468,7 +1468,9 @@ function mxRichRead(el) {
     }
     const inner = ser(n);
     if (!tag || !inner) return inner;
-    return `<${tag}${tag === 'ins' || tag === 'del' ? ' class="mine"' : ''}>${inner}</${tag}>`;
+    /* a tracked edit keeps whose it is: Clavia's (a conversion's) or yours */
+    const by = tag === 'ins' || tag === 'del' ? ` class="${n.classList.contains('clavia') ? 'clavia' : 'mine'}"` : '';
+    return `<${tag}${by}>${inner}</${tag}>`;
   }).join('');
   return ser(el);
 }
@@ -1484,8 +1486,12 @@ function mxRichParse(text) {
       if (c.nodeType !== 1) { c.remove(); continue; }
       clean(c);
       if (MX_RICH[c.tagName]) {
+        const clavia = (c.tagName === 'INS' || c.tagName === 'DEL') && c.classList.contains('clavia');
         for (const a of [...c.attributes]) c.removeAttribute(a.name);
-        if (c.tagName === 'INS' || c.tagName === 'DEL') { c.className = 'mine'; c.title = 'Your edit'; }
+        if (c.tagName === 'INS' || c.tagName === 'DEL') {
+          c.className = clavia ? 'clavia' : 'mine';
+          c.title = clavia ? 'Clavia’s edit' : 'Your edit';
+        }
       } else c.replaceWith(...c.childNodes);
     }
   };
@@ -2331,7 +2337,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      left; the tracked edits, Track Changes itself, Export and the rest
      on the right. Only where the template is being written: filling one
      in and reading an old version have nothing to format. */
-  const marksIn = () => [...docBody.querySelectorAll('ins.mine, del.mine')];
+  const marksIn = () => [...docBody.querySelectorAll('ins.mine, del.mine, ins.clavia, del.clavia')];
   /* which block the caret is in — or was last in, so a click on the
      ribbon (which steals nothing: mousedown is eaten) still knows */
   const curBlockEl = () => {
@@ -2447,7 +2453,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
       while (next && next.nodeType === 3 && !next.data.trim()) next = next.nextSibling;
       let pair = null, chip = null;
       if (m.tagName === 'DEL' && next?.nodeType === 1) {
-        if (next.matches?.('ins.mine')) { pair = next; seen.add(next); }
+        if (next.matches?.('ins.mine, ins.clavia')) { pair = next; seen.add(next); }
         else if (next.classList?.contains('mx-chip')) chip = next;
       }
       out.push({ m, pair, chip });
@@ -2465,7 +2471,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
   let activeMark = null;
   const setActiveCard = (m, scrollDoc) => {
     activeMark = m;
-    for (const x of docBody.querySelectorAll('.mine.is-active')) x.classList.remove('is-active');
+    for (const x of docBody.querySelectorAll('ins.is-active, del.is-active')) x.classList.remove('is-active');
     if (m) {
       m.classList.add('is-active');
       if (scrollDoc) { openSection(m.closest('.mx-sec')?.dataset.id); m.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
@@ -2473,25 +2479,34 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     paintCards();
   };
   const cardEl = (g) => {
-    /* who made the change: the conversion's edits carry Clavia's quill,
-       an edit typed on the page is yours */
-    const lone = !g.pair && !g.chip;
+    /* who made the change is on the mark itself: Clavia's carry its
+       quill and the redline's colours, an edit typed on the page is
+       yours and reads in your blue */
+    const clavia = g.m.classList.contains('clavia');
+    const by = clavia ? 'clavia' : 'mine';
     const sec = g.m.closest('.mx-sec');
     const ref = !sec || sec.classList.contains('is-pre') ? 'Opening'
       : ((sec.querySelector('.mx-sec-n')?.textContent || '') + ' '
         + (sec.querySelector('.mx-doc-h')?.textContent.trim() || '')).trim();
-    const body = g.pair ? `<del>${cmEsc(g.m.textContent)}</del><ins>${cmEsc(g.pair.textContent)}</ins>`
-      : g.chip ? `<del>${cmEsc(g.m.textContent)}</del><ins class="mx-cm-chip">${cmEsc(g.chip.textContent)}</ins>`
-      : g.m.tagName === 'DEL' ? `<del>${cmEsc(g.m.textContent)}</del>`
-      : `<ins>${cmEsc(g.m.textContent)}</ins>`;
+    /* the change in its sentence: a few of the words around it, the way
+       the redline editor quotes a clause */
+    const last = g.pair || g.chip || g.m;
+    const lead = (g.m.previousSibling?.textContent || '').split(/\s+/).filter(Boolean).slice(-5).join(' ');
+    const tail = (last.nextSibling?.textContent || '').split(/\s+/).filter(Boolean).slice(0, 5).join(' ');
+    const body = (lead ? `… ${cmEsc(lead)} ` : '')
+      + (g.pair ? `<del class="${by}">${cmEsc(g.m.textContent)}</del> <ins class="${by}">${cmEsc(g.pair.textContent)}</ins>`
+        : g.chip ? `<del class="${by}">${cmEsc(g.m.textContent)}</del> <ins class="mx-cm-chip">${cmEsc(g.chip.textContent)}</ins>`
+        : g.m.tagName === 'DEL' ? `<del class="${by}">${cmEsc(g.m.textContent)}</del>`
+        : `<ins class="${by}">${cmEsc(g.m.textContent)}</ins>`)
+      + (tail ? ` ${cmEsc(tail)} …` : '');
     return h('div', { class: 'mx-cm' + (g.m === activeMark ? ' is-active' : ''), role: 'button', tabindex: '0',
       onclick: () => setActiveCard(g.m, true),
       onkeydown: (e) => { if (e.key === 'Enter') setActiveCard(g.m, true); } },
       h('div', { class: 'mx-cm-h' },
-        lone
-          ? h('span', { class: 'mx-cm-logo', html: rbSvg(RB.track) })
-          : quillEl('static', { cls: 'mx-cm-logo' }),
-        h('span', { class: 'mx-cm-who' }, lone ? 'You' : 'Clavia'),
+        clavia
+          ? quillEl('static', { cls: 'mx-cm-logo' })
+          : h('span', { class: 'mx-cm-logo', html: rbSvg(RB.track) }),
+        h('span', { class: 'mx-cm-who' }, clavia ? 'Clavia' : 'You'),
         h('span', { class: 'mx-cm-from' }, ref)),
       h('div', { class: 'mx-cm-b' }, h('p', { class: 'mx-cm-text', html: body })),
       h('div', { class: 'mx-cm-f' },
@@ -2587,7 +2602,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      its card: clicking the words opens the card, the way the redline
      editor pairs the two */
   if (editable) docBody.addEventListener('click', (e) => {
-    const m = e.target.closest('ins.mine, del.mine');
+    const m = e.target.closest('ins.mine, del.mine, ins.clavia, del.clavia');
     if (!m || !docBody.contains(m)) return;
     e.preventDefault();
     if (docScroll.classList.contains('has-cards')) {
