@@ -1047,6 +1047,26 @@ function mxTplFromPrecedent(name, text) {
     .replace(/\s*\b(signed|executed|final|fully executed)\b\s*$/i, '').trim()
     .replace(/\b([a-z])/g, (_, c) => c.toUpperCase());
   const t = newTemplate(templateFrom(`${text || ''} ${name}`, clean), true, false);
+  /* The conversion shows its work. The value the precedent had stays
+     beside the blank that replaced it, struck through as a tracked
+     change — what was deleted to make each placeholder can be read, and
+     answered: accept where the blank is right, reject to keep the old
+     words. The counterparty is read off the file's name; the rest are
+     the values the document carried (scripted: the field's example). */
+  const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const first = clean.split(' ')[0];
+  const co = first && !/^(mutual|one|two|way|nda|msa|dpa|order|form|master|services?|agreement|notice|reseller|non|renewal|data|processing|short|standard)$/i.test(first)
+    ? first : null;
+  const was = (key) => (key === 'counterparty' && co) ? co
+    : t.fields.find(x => x.key === key)?.hint || null;
+  for (const b of t.body) {
+    const k2 = b.h !== undefined ? 'h' : 'p';
+    b[k2] = b[k2].replace(/\{\{([a-z0-9_]+)\}\}/gi, (m, k) => {
+      const v = was(k);
+      return v ? `<del class="mine">${esc(v)}</del>${m}` : m;
+    });
+  }
+  save();
   mxTplEditInChat(t, mxTplAskBlanks(t, name, text), true);
 }
 function mxTplAskBlanks(t, name, text) {
@@ -1079,8 +1099,10 @@ function mxTplAskBlanks(t, name, text) {
     { role: 'user', text: text || `Turn ${name} into a template with placeholders.`, files: [{ name }] },
     { role: 'bot', cites: null, artifact: null,
       answer: `Read ${name}. Its sections become the template's sections, and the deal-specific terms `
-        + '— names, dates, amounts — become placeholders. How it is set stays the document’s own: '
-        + `${MX_SET.layout.options.find(o => o.key === read.layout).label.toLowerCase()}, `
+        + '— names, dates, amounts — become placeholders. What each placeholder replaced is struck '
+        + 'through beside it as a tracked change, so you can see what was taken out: accept it where '
+        + 'the blank is right, or reject it to keep the document’s words. How it is set stays the '
+        + `document’s own: ${MX_SET.layout.options.find(o => o.key === read.layout).label.toLowerCase()}, `
         + `${MX_SET.face.options.find(o => o.key === read.face).label} ${read.size} pt. `
         + 'One thing the document cannot say is how its blanks should be marked.',
       steps: [{ source: 'internal', query: `Read ${name}`,
@@ -3112,14 +3134,14 @@ RENDER.template = (a) => {
   const editing = state.view === 'thread' || MX.templates.editing === t.id;
   return {
     body: templatePage(latest ? t : versionOf(a).snap, false, true, !latest || !editing),
-    edit: latest && state.view !== 'thread' ? {
-      label: MX.templates.editing === t.id ? 'Done' : 'Edit',
-      title: MX.templates.editing === t.id ? 'Put the editor away' : 'Edit this template in place',
-      run: () => {
-        MX.templates.editing = MX.templates.editing === t.id ? null : t.id;
-        openArtifact(a, { full: true });
-      },
-    } : null,
+    edit: latest && state.view !== 'thread' ? (MX.templates.editing === t.id
+      ? { label: 'Done', title: 'Put the editor away',
+          run: () => { MX.templates.editing = null; openArtifact(a, { full: true }); } }
+      /* Edit is both edits at once: the template opens beside its
+         conversation, the band comes up over it, and either hand works —
+         type on the document, or ask the chat to change it */
+      : { label: 'Edit', title: 'Edit this template — on the page, or through its conversation',
+          run: () => { MX.templates.editing = null; mxTplEditInChat(t); } }) : null,
     /* opened from the list, the way out is back to it; beside a chat, the
        template keeps its mark and the panel's own close */
     lead: [state.view === 'templates'
