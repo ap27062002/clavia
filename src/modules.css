@@ -505,34 +505,68 @@
 }
 /* a highlight from the ribbon */
 .mx-doc .mx-doc-in mark { background: #F4F08A; border-radius: 2px; padding: 0 1px; }
-/* a card's click lands here: the words flash where they stand */
-.mx-doc ins.mine.is-hit, .mx-doc del.mine.is-hit { outline: 2px solid #3D5FA8; outline-offset: 1px; border-radius: 2px; }
+/* a mark whose card is open is marked itself */
+.mx-doc ins.mine.is-active, .mx-doc del.mine.is-active { outline: 2px solid var(--line-strong); outline-offset: 1px; border-radius: 2px; }
 
 /* ── the changes as cards beside the document ──
-   The redline editor's rail: one card per tracked change, each with its
-   own Accept and Reject. Show changes on the band puts it up and away. */
-.mx-tpl-doc.has-cards { display: flex; align-items: flex-start; justify-content: center; gap: 16px; }
+   The redline editor's rail, the way a Word add-in draws it: a quiet
+   card per change — who made it and where, the redline itself — that
+   opens on click to its Accept and Reject. Show changes on the band
+   puts the rail up and away. */
+.mx-tpl-doc.has-cards { display: flex; align-items: flex-start; justify-content: center; gap: 14px; }
 .mx-tpl-doc.has-cards .mx-doc { flex: 0 1 754px; min-width: 0; margin: 0; }
 .mx-tpl-doc:not(.has-cards) .mx-cmts { display: none; }
 .mx-cmts {
-  flex: 0 0 236px; min-width: 0; position: sticky; top: 0;
-  display: flex; flex-direction: column; gap: 10px; padding-top: 44px;
+  flex: 0 0 258px; min-width: 0; position: sticky; top: 0;
+  display: flex; flex-direction: column; gap: 8px; padding-top: 44px;
 }
-.mx-tpl.is-in-chat .mx-cmts { flex-basis: 196px; }
+.mx-tpl.is-in-chat .mx-cmts { flex-basis: 204px; }
 .mx-cm {
-  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
-  padding: 9px 11px 10px; font-size: 12.5px; line-height: 1.45; cursor: pointer; text-align: left;
-  box-shadow: 0 1px 2px rgba(20,20,19,.03);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  overflow: hidden; cursor: pointer; flex: none; text-align: left;
   transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
 }
-.mx-cm:hover { border-color: var(--line-strong); box-shadow: 0 2px 8px -4px rgba(20,20,19,.14); }
-.mx-cm-k { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; font-weight: 600; color: #3D5FA8; }
-.mx-cm-sec { font-weight: 450; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mx-cm-t { margin: 5px 0 9px; color: var(--text); overflow-wrap: break-word; }
-.mx-cm-t del { color: #3D5FA8; text-decoration: line-through; text-decoration-color: rgba(61,95,168,.75); }
-.mx-cm-t ins { color: #3D5FA8; text-decoration: underline; text-decoration-color: rgba(61,95,168,.55); text-underline-offset: 2px; }
-.mx-cm-chip { border: 1px dashed var(--line-strong); border-radius: 5px; padding: 0 4px; color: var(--text-soft); white-space: nowrap; }
-.mx-cm-acts { display: flex; gap: 6px; justify-content: flex-end; }
+.mx-cm:hover { border-color: var(--line-strong); }
+.mx-cm.is-active { border-color: var(--line-strong); box-shadow: 0 10px 28px -18px rgba(26,26,24,.4); }
+.mx-cm-h { display: flex; align-items: center; gap: 7px; padding: 8px 12px; border-bottom: 1px solid var(--line-soft); }
+.mx-cm-logo, .mx-cm-logo svg { width: 14px; height: 14px; flex: none; display: inline-flex; color: var(--text-soft); }
+.mx-cm-who { font-size: 12.5px; color: var(--text-soft); }
+.mx-cm-from {
+  margin-left: auto; font-size: 12px; color: var(--text-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 60%;
+}
+.mx-cm-b { padding: 9px 12px 10px; }
+.mx-cm-text {
+  margin: 0; font-size: 13px; line-height: 1.55; color: #3B3A36; overflow-wrap: break-word;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden;
+}
+.mx-cm.is-active .mx-cm-text { -webkit-line-clamp: unset; display: block; }
+.mx-cm-text del { color: #3D5FA8; text-decoration: line-through; text-decoration-color: rgba(61,95,168,.75); }
+.mx-cm-text ins {
+  color: #3D5FA8; background: rgba(61,95,168,.07); border-radius: 2px;
+  text-decoration: underline; text-decoration-color: rgba(61,95,168,.5); text-underline-offset: 3px;
+}
+.mx-cm-text del + ins { margin-left: .25em; }
+.mx-cm-text ins.mx-cm-chip {
+  background: none; text-decoration: none;
+  border: 1px dashed var(--line-strong); border-radius: 5px; padding: 0 4px;
+  color: var(--text-soft); white-space: nowrap;
+}
+.mx-cm-f {
+  display: none; align-items: center; justify-content: flex-end; gap: 4px;
+  padding: 6px 8px; border-top: 1px solid var(--line-soft);
+}
+.mx-cm.is-active .mx-cm-f { display: flex; }
+.mx-cm-acc {
+  appearance: none; border: 0; background: #2A2A27; color: #fff; height: 28px; padding: 0 14px;
+  border-radius: 8px; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;
+}
+.mx-cm-acc:hover { background: #111110; }
+.mx-cm-rej {
+  appearance: none; border: 0; background: none; height: 28px; padding: 0 10px;
+  border-radius: 8px; font: inherit; font-size: 12.5px; color: var(--text-soft); cursor: pointer;
+}
+.mx-cm-rej:hover { background: rgba(20,20,19,.06); color: var(--text); }
 
 /* ── a section on the sheet ──
    No rule under the heading: its chevron sits at the right corner, and a
