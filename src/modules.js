@@ -2459,30 +2459,45 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     else resolveMark(g.m, how);
   };
   const cmEsc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const cmCut = (x) => x.length > 110 ? x.slice(0, 108).trimEnd() + '…' : x;
+  /* one card is open at a time, the way the redline editor's rail works:
+     a click puts the footer with Accept and Reject on it, marks the words
+     in the document, and takes you to whichever of the two you were not on */
+  let activeMark = null;
+  const setActiveCard = (m, scrollDoc) => {
+    activeMark = m;
+    for (const x of docBody.querySelectorAll('.mine.is-active')) x.classList.remove('is-active');
+    if (m) {
+      m.classList.add('is-active');
+      if (scrollDoc) { openSection(m.closest('.mx-sec')?.dataset.id); m.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    }
+    paintCards();
+  };
   const cardEl = (g) => {
-    const kind = g.pair ? 'Changed' : g.chip ? 'Made a blank' : g.m.tagName === 'DEL' ? 'Deleted' : 'Inserted';
+    /* who made the change: the conversion's edits carry Clavia's quill,
+       an edit typed on the page is yours */
+    const lone = !g.pair && !g.chip;
     const sec = g.m.closest('.mx-sec');
     const ref = !sec || sec.classList.contains('is-pre') ? 'Opening'
-      : (sec.querySelector('.mx-sec-n')?.textContent || '') + ' ' + (sec.querySelector('.mx-doc-h')?.textContent.trim() || '');
-    const body = g.pair ? `<del>${cmEsc(cmCut(g.m.textContent))}</del> <ins>${cmEsc(cmCut(g.pair.textContent))}</ins>`
-      : g.chip ? `<del>${cmEsc(cmCut(g.m.textContent))}</del> <span class="mx-cm-chip">${cmEsc(g.chip.textContent)}</span>`
-      : g.m.tagName === 'DEL' ? `<del>${cmEsc(cmCut(g.m.textContent))}</del>`
-      : `<ins>${cmEsc(cmCut(g.m.textContent))}</ins>`;
-    const go = () => {
-      openSection(sec?.dataset.id);
-      g.m.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      docBody.querySelectorAll('.is-hit').forEach(x => x.classList.remove('is-hit'));
-      g.m.classList.add('is-hit'); setTimeout(() => g.m.classList.remove('is-hit'), 1400);
-    };
-    return h('div', { class: 'mx-cm', role: 'button', tabindex: '0', onclick: go,
-      onkeydown: (e) => { if (e.key === 'Enter') go(); } },
-      h('div', { class: 'mx-cm-k' }, h('span', {}, kind), h('span', { class: 'mx-cm-sec' }, ref.trim())),
-      h('div', { class: 'mx-cm-t', html: body }),
-      h('div', { class: 'mx-cm-acts' },
-        h('button', { class: 'doc-rl-act', type: 'button',
+      : ((sec.querySelector('.mx-sec-n')?.textContent || '') + ' '
+        + (sec.querySelector('.mx-doc-h')?.textContent.trim() || '')).trim();
+    const body = g.pair ? `<del>${cmEsc(g.m.textContent)}</del><ins>${cmEsc(g.pair.textContent)}</ins>`
+      : g.chip ? `<del>${cmEsc(g.m.textContent)}</del><ins class="mx-cm-chip">${cmEsc(g.chip.textContent)}</ins>`
+      : g.m.tagName === 'DEL' ? `<del>${cmEsc(g.m.textContent)}</del>`
+      : `<ins>${cmEsc(g.m.textContent)}</ins>`;
+    return h('div', { class: 'mx-cm' + (g.m === activeMark ? ' is-active' : ''), role: 'button', tabindex: '0',
+      onclick: () => setActiveCard(g.m, true),
+      onkeydown: (e) => { if (e.key === 'Enter') setActiveCard(g.m, true); } },
+      h('div', { class: 'mx-cm-h' },
+        lone
+          ? h('span', { class: 'mx-cm-logo', html: rbSvg(RB.track) })
+          : quillEl('static', { cls: 'mx-cm-logo' }),
+        h('span', { class: 'mx-cm-who' }, lone ? 'You' : 'Clavia'),
+        h('span', { class: 'mx-cm-from' }, ref)),
+      h('div', { class: 'mx-cm-b' }, h('p', { class: 'mx-cm-text', html: body })),
+      h('div', { class: 'mx-cm-f' },
+        h('button', { class: 'mx-cm-rej', type: 'button',
           onclick: (e) => { e.stopPropagation(); answerGroup(g, 'reject'); } }, 'Reject'),
-        h('button', { class: 'doc-rl-act is-yes', type: 'button',
+        h('button', { class: 'mx-cm-acc', type: 'button',
           onclick: (e) => { e.stopPropagation(); answerGroup(g, 'accept'); } }, 'Accept')));
   };
   const paintCards = () => {
@@ -2568,11 +2583,19 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     const c = e.target.closest('.mx-chip');
     if (c) fieldsEl.querySelector(`input[data-key="${c.dataset.key}"]`)?.focus();
   });
-  /* a tracked edit answers where it stands */
+  /* a tracked edit answers where it stands — or, with the rail up, on
+     its card: clicking the words opens the card, the way the redline
+     editor pairs the two */
   if (editable) docBody.addEventListener('click', (e) => {
     const m = e.target.closest('ins.mine, del.mine');
     if (!m || !docBody.contains(m)) return;
     e.preventDefault();
+    if (docScroll.classList.contains('has-cards')) {
+      const g = changeGroups().find(x => x.m === m || x.pair === m);
+      setActiveCard(g ? g.m : m, false);
+      requestAnimationFrame(() => cmts.querySelector('.mx-cm.is-active')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+      return;
+    }
     const r = m.getBoundingClientRect();
     document.querySelectorAll('.doc-rl-pop').forEach(x => x.remove());
     const pop = h('div', { class: 'doc-rl-pop' },
