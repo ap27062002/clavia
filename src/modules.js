@@ -923,15 +923,21 @@ function templateList() {
       icon: () => quillEl('static', { cls: 'pb-way-quill' }) },
     { key: 'upload', name: 'Upload Template', desc: 'Upload one of your own agreements, and its terms become the blanks.',
       icon: () => { const w = h('span', { html: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + APM_IC.upload + '</svg>' }); return w.firstChild; } },
+    { key: 'prec', name: 'From a Precedent', desc: 'Upload a signed agreement: its terms become placeholders, its formatting stays.',
+      icon: () => { const w = h('span', { html: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        + '<path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z"/><path d="M13.5 3v5.5H19"/>'
+        + '<path d="M8.5 13h2.5M13.5 13H16M8.5 16.5h1.5M12.5 16.5h3" stroke-dasharray="0.1 2.4"/></svg>' }); return w.firstChild; } },
   ], (k) => {
     if (k === 'ai') return mxOpen('templates', 'new');
-    /* two ways in: say what it should be, or hand over one you already have */
-    if (k === 'upload') {
+    /* three ways in: say what it should be, hand over one you already
+       have, or hand over a signed one and keep how it reads */
+    if (k === 'upload' || k === 'prec') {
       /* a file from your computer: its name and kind are enough to start from, as with Build with AI */
       const pick = h('input', { type: 'file', accept: '.doc,.docx,.pdf,.rtf,.txt,.odt', style: 'display:none' });
       pick.onchange = () => {
         const f = pick.files?.[0]; pick.remove();
         if (!f) return;
+        if (k === 'prec') return mxTplFromPrecedent(f.name);
         newTemplate(templateFrom(f.name, f.name), true);
         pbToast(`Made a template from “${f.name}”`);
       };
@@ -948,7 +954,9 @@ function newTemplate(fields, flash, open = true) {
   const t = { id: pbUid('tpl'), status: 'draft', owner: USER.name, updated: mxNow(), used: 0, version: 1, ...fields };
   mxData().templates.unshift(t); save();
   if (flash) MX.flash = t.id;
-  if (open) mxOpen('templates', t.id);
+  /* a template just made opens with the editor on: making it IS editing
+     it. One opened later from the list opens as a thing to read. */
+  if (open) { MX.templates.editNext = t.id; mxOpen('templates', t.id); }
   return t;
 }
 /* Scripted for now: the nearest template we have, under the name you gave it. */
@@ -988,8 +996,10 @@ function buildTemplate(text, files, step) {
 /* the questions, and what answering them does: the template is set that
    way, the draft is described, and the document opens beside it */
 function mxTplAskSet(t, text, files) {
+  /* the typeface is not asked any more: it takes the default, and saying
+     "set it in Arial" in the box still works (mxTplAsk reads it) */
   queueMicrotask(() => chatAsk({
-    questions: MX_SET_KEYS.map(k => ({
+    questions: MX_SET_KEYS.filter(k => k !== 'face').map(k => ({
       key: k, header: MX_SET[k].label, question: MX_SET[k].ask,
       options: MX_SET[k].options, def: MX_SET[k].def,
     })),
@@ -1020,6 +1030,61 @@ function mxTplAskSet(t, text, files) {
               rows: files.map(name => ({ title: name, meta: 'reference' })) }
           : { source: 'think', query: 'Read what the document is for' },
       ] },
+  ];
+}
+
+/* ── a precedent handed over, turned into a template ──────────
+   The document decides everything but one thing. Its sections become
+   the template's sections, the deal-specific terms — names, dates,
+   amounts — become placeholders, and how it is set (layout, columns,
+   type, size) is read off the document rather than asked. The one
+   thing a document cannot say about itself is how its blanks should be
+   marked, so that is the one question. */
+function mxTplFromPrecedent(name) {
+  /* the file's name, read as a document's: underscores to spaces, the
+     suffix a signed copy carries dropped */
+  const clean = name.replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ')
+    .replace(/\s*\b(signed|executed|final|fully executed)\b\s*$/i, '').trim()
+    .replace(/\b([a-z])/g, (_, c) => c.toUpperCase());
+  const t = newTemplate(templateFrom(name, clean), true, false);
+  mxTplEditInChat(t, mxTplAskBlanks(t, name), true);
+}
+function mxTplAskBlanks(t, name) {
+  /* how the document is set, read from it (scripted: from its name, the
+     same reading mxTplAsk does for "set it like this") */
+  const n = name.toLowerCase();
+  const read = {
+    stance: 'standard',
+    layout: /letter|notice|memo/.test(n) ? 'letter' : 'legal',
+    columns: 'one',
+    face: /calibri/.test(n) ? 'calibri' : /arial|helvetica/.test(n) ? 'arial' : 'times',
+    size: '11',
+  };
+  queueMicrotask(() => chatAsk({
+    questions: [{ key: 'blanks', header: MX_SET.blanks.label, question: MX_SET.blanks.ask,
+      options: MX_SET.blanks.options, def: MX_SET.blanks.def }],
+    onDone: (answers) => {
+      t.set = { ...read, blanks: answers.blanks?.key || MX_SET.blanks.def };
+      t.updated = mxNow(); save();
+      mxTplEnsureVersions(t);
+      say('user', answers.blanks?.text
+        ? `blanks: “${answers.blanks.text}”`
+        : MX_SET.blanks.options.find(o => o.key === t.set.blanks).label + '.');
+      for (const m of mxTplBuiltIntro(t, null, [name]).slice(1)) say('bot', m.answer, { ...m, text: m.answer, thinking: false });
+      paintThread();
+      queueMicrotask(() => openArtifact(mxTplArtifact(t)));
+    },
+  }));
+  return [
+    { role: 'user', text: `Turn ${name} into a template with placeholders.`, files: [{ name }] },
+    { role: 'bot', cites: null, artifact: null,
+      answer: `Read ${name}. Its sections become the template's sections, and the deal-specific terms `
+        + '— names, dates, amounts — become placeholders. How it is set stays the document’s own: '
+        + `${MX_SET.layout.options.find(o => o.key === read.layout).label.toLowerCase()}, `
+        + `${MX_SET.face.options.find(o => o.key === read.face).label} ${read.size} pt. `
+        + 'One thing the document cannot say is how its blanks should be marked.',
+      steps: [{ source: 'internal', query: `Read ${name}`,
+        rows: [{ title: name, meta: 'precedent' }] }] },
   ];
 }
 
@@ -2293,7 +2358,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     alignC: '<path d="M4 6h16M7 10.3h10M4 14.6h16M7 19h10"/>',
     alignR: '<path d="M4 6h16M10 10.3h10M4 14.6h16M10 19h10"/>',
     track: '<path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 5.5l3 3"/><path d="M4 23h16" stroke-dasharray="2 2.6"/>',
-    export: '<path d="M12 15V4"/><path d="m7.5 8.5 4.5-4.5 4.5 4.5"/><path d="M4.5 14.5v3a3 3 0 0 0 3 3h9a3 3 0 0 0 3-3v-3"/>',
     more: '<circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/>',
   };
   const rbSvg = (p) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
@@ -2352,22 +2416,24 @@ function templatePage(t, use = false, shell = false, frozen = false) {
         { label: 'Copy clean draft', run: copyClean },
       ]);
     } });
+  /* The band sits over the whole page, outside the outline and the about
+     panel, its tools gathered in the middle — the way Word's ribbon
+     stands over the document rather than on it. */
   const ribbon = !editable ? null : h('div', { class: 'mx-ribbon' },
-    rbBtn('Undo', rbSvg(RB.undo), () => exec('undo')),
-    rbBtn('Redo', rbSvg(RB.redo), () => exec('redo')),
-    rbSep(),
-    ...fmtBtns.map(x => x.el), hlBtn,
-    rbSep(),
-    rbBtn('Decrease indent', rbSvg(RB.outdent), () => nudge(-1)),
-    rbBtn('Increase indent', rbSvg(RB.indent), () => nudge(1)),
-    rbSep(),
-    ...alignBtns.map(x => x.el),
-    h('span', { class: 'pb-grow' }),
-    rbN,
-    trackBtn,
-    rbBtn('Export — opens in Word', h('span', { class: 'mx-rb-ic', html: rbSvg(RB.export) }), () => mxTplToWord(t), 'mx-rb-lab mx-rb-exp'),
-    moreBtn);
-  if (ribbon) ribbon.querySelector('.mx-rb-exp').append(h('span', { class: 'mx-rb-l' }, 'Export'));
+    h('div', { class: 'mx-rb-band' },
+      rbBtn('Undo', rbSvg(RB.undo), () => exec('undo')),
+      rbBtn('Redo', rbSvg(RB.redo), () => exec('redo')),
+      rbSep(),
+      ...fmtBtns.map(x => x.el), hlBtn,
+      rbSep(),
+      rbBtn('Decrease indent', rbSvg(RB.outdent), () => nudge(-1)),
+      rbBtn('Increase indent', rbSvg(RB.indent), () => nudge(1)),
+      rbSep(),
+      ...alignBtns.map(x => x.el),
+      rbSep(),
+      rbN,
+      trackBtn,
+      moreBtn));
   /* the pressed states follow the caret */
   if (editable) {
     const onSel = () => {
@@ -2378,7 +2444,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     document.addEventListener('selectionchange', onSel);
   }
 
-  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) }, docBar, ribbon,
+  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) }, docBar,
     h('div', { class: 'mx-doc-in' },
       editable ? title : h('h1', { class: 'mx-doc-title' }, t.name || 'Untitled template'), docBody, nomatch));
   /* a blank in the document and its field find each other */
@@ -2588,6 +2654,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
   const page = h('div', { class: 'mx-tpl' + (use ? ' is-use' : '') + (shell ? ' is-shell' : '')
       + (inChat ? ' is-in-chat' : '') + (sideHidden() ? ' is-side-hidden' : '')
       + (aboutHidden() ? ' is-about-hidden' : '') },
+    ribbon,
     h('div', { class: 'mx-tpl-side-wrap' }, side),
     h('div', { class: 'mx-tpl-main' },
       /* Docked beside its conversation nothing stands over the document
@@ -3016,6 +3083,10 @@ function mxTplEditInChat(t, intro, hold) {
    — the way pbView opens a playbook. The template has no page of its
    own any more, because the thing itself is the page. */
 function mxTplView(t) {
+  /* read first, edit on request — unless it was just made, in which case
+     the band is already waiting for the first words */
+  MX.templates.editing = MX.templates.editNext === t.id ? t.id : null;
+  MX.templates.editNext = null;
   if (state.view !== 'templates' || MX.templates.open) { mxClose('templates'); go('templates'); }
   openArtifact(mxTplArtifact(t), { full: true });
   setArtifactHash(mxTplArtifact(t));
@@ -3030,8 +3101,21 @@ RENDER.template = (a) => {
   /* the newest version is the template itself; an older one is the
      record it left, and reads only */
   const latest = isCurrentVersion(a);
+  /* Full screen the template opens as a thing to read: nothing editable,
+     no band, until Edit is pressed — then the editor's band comes up over
+     the document, the way Word opens one. Beside its conversation it is
+     already being worked on, so it is editable from the start. */
+  const editing = state.view === 'thread' || MX.templates.editing === t.id;
   return {
-    body: templatePage(latest ? t : versionOf(a).snap, false, true, !latest),
+    body: templatePage(latest ? t : versionOf(a).snap, false, true, !latest || !editing),
+    edit: latest && state.view !== 'thread' ? {
+      label: MX.templates.editing === t.id ? 'Done' : 'Edit',
+      title: MX.templates.editing === t.id ? 'Put the editor away' : 'Edit this template in place',
+      run: () => {
+        MX.templates.editing = MX.templates.editing === t.id ? null : t.id;
+        openArtifact(a, { full: true });
+      },
+    } : null,
     /* opened from the list, the way out is back to it; beside a chat, the
        template keeps its mark and the panel's own close */
     lead: [state.view === 'templates'
