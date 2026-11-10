@@ -3451,8 +3451,22 @@ function openArtifact(a, { full = false } = {}) {
 
   /* Opened from the library the artifact has the window and no conversation
      to speak to, which is the only way to change it. This goes to the
-     session that produced it and leaves the artifact open beside it. */
-  const editBtn = h('button', {
+     session that produced it and leaves the artifact open beside it.
+     A kind can put its own Edit here instead (made.edit): a template is
+     edited in place, so its button turns the editor on rather than
+     opening a conversation. */
+  const editBtn = made.edit ? h('button', {
+    class: 'xp-btn xp-edit', type: 'button',
+    title: made.edit.title || 'Edit this in place',
+    onclick: () => made.edit.run(),
+  },
+    h('span', { class: 'xp-lock', 'aria-hidden': 'true',
+      html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" '
+          + 'stroke-linecap="round" stroke-linejoin="round">'
+          + '<path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 5.5l3 3"/>'
+          + '</svg>' }),
+    made.edit.label)
+  : h('button', {
     class: 'xp-btn xp-edit', type: 'button',
     title: 'Open the conversation and change this',
     onclick: () => {

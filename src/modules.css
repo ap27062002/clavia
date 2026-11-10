@@ -248,7 +248,7 @@
 .mx-tpl.is-shell:not(.is-in-chat).is-about-hidden { grid-template-columns: var(--mx-side-w, 320px) minmax(0, 1fr) 0px; }
 .mx-tpl.is-shell:not(.is-in-chat).is-side-hidden { grid-template-columns: 0px minmax(0, 1fr) var(--mx-about-w, 340px); }
 .mx-tpl.is-shell:not(.is-in-chat).is-side-hidden.is-about-hidden { grid-template-columns: 0px minmax(0, 1fr) 0px; }
-.mx-tpl-about-wrap { grid-column: 3; min-width: 0; min-height: 0; overflow: hidden; display: flex; }
+.mx-tpl-about-wrap { grid-column: 3; grid-row: 2; min-width: 0; min-height: 0; overflow: hidden; display: flex; }
 .mx-tpl-about {
   flex: none; box-sizing: border-box; width: var(--mx-about-w, 340px);
   min-height: 0; overflow-y: auto; padding: 14px 20px 36px;
@@ -314,6 +314,8 @@
   position: relative;
   flex: 1; min-height: 0;
   display: grid; grid-template-columns: var(--mx-side-w, 320px) minmax(0, 1fr);
+  /* row 1 is the editor's band, there only while editing; everything else lives on row 2 */
+  grid-template-rows: auto minmax(0, 1fr);
   animation: rise 420ms var(--ease-out) backwards;
   /* the panel's column closes and opens in one motion, the document riding along */
   transition: grid-template-columns 360ms cubic-bezier(.4, 0, .1, 1);
@@ -323,8 +325,8 @@
 .mx-tpl.is-resizing, .mx-tpl.is-resizing * { cursor: col-resize !important; user-select: none; }
 /* the panel is held by its right edge in a column that clips, so it slides
    out whole rather than being squeezed */
-.mx-tpl-side-wrap { grid-column: 1; min-width: 0; min-height: 0; overflow: hidden; display: flex; justify-content: flex-end; }
-.mx-tpl-main { grid-column: 2; }
+.mx-tpl-side-wrap { grid-column: 1; grid-row: 2; min-width: 0; min-height: 0; overflow: hidden; display: flex; justify-content: flex-end; }
+.mx-tpl-main { grid-column: 2; grid-row: 2; }
 .mx-tpl-side {
   flex: none; box-sizing: border-box; width: var(--mx-side-w, 320px);
   min-height: 0; overflow-y: auto; padding: 26px 18px 40px 26px;
@@ -450,18 +452,20 @@
 .mx-add-sec { flex: none; font-size: 13px; margin-left: 2px; }
 .mx-doc-h:empty::before, .mx-doc-p:empty::before { content: attr(data-ph); color: var(--text-faint); }
 
-/* ── the ribbon: the editor's toolbar, under the Sections bar ──
-   The redline editor's toolbar, on the template: undo and redo, the
-   inline formats, indents and alignment; then the tracked edits, Track
-   Changes, Export and the ⋯ menu at the other end. Pinned just under
-   the bar above it, so both ride the scroll together. */
+/* ── the band: the editor's toolbar, over the whole page ──
+   The redline editor's toolbar as Word has it: one band across the top
+   of the window, outside the outline on the left and the about panel on
+   the right, its tools gathered in the middle. It is there only while
+   the template is being edited — Edit brings it up, Done puts it away. */
 .mx-ribbon {
-  position: sticky; top: calc(44px - var(--mx-doc-top, 4px)); z-index: 2;
-  display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
-  min-height: 38px; padding: 3px calc(var(--mx-margin) - 7.5px);
-  background: rgba(255,255,255,.95); backdrop-filter: blur(6px);
-  border-bottom: 1px solid var(--line-soft);
+  grid-column: 1 / -1; grid-row: 1;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 40px; padding: 4px 16px;
+  background: var(--surface, #fff);
+  border-bottom: 1px solid var(--line);
+  z-index: 5;
 }
+.mx-rb-band { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; justify-content: center; }
 .mx-rb-b {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none;
   min-width: 28px; height: 28px; padding: 0 5px; border: 0; border-radius: 7px;
