@@ -356,7 +356,7 @@ function tplDraftStart(t, prec = null, deal = '', said = '') {
   if (!t) return;
   tplPrecSeed();
   const vals = (typeof MX !== 'undefined' && MX.templates?.values?.[t.id]) || {};
-  const txt = (s) => tplEsc(String(s).replace(/\{\{([a-z0-9_]+)\}\}/gi,
+  const txt = (s) => tplEsc(mxRichPlain(String(s)).replace(/\{\{([a-z0-9_]+)\}\}/gi,
     (_, k) => vals[k]?.trim() || `[${mxFieldLabel(t, k)}]`));
   const blocks = [{ t: 'h1', v: tplEsc(t.name || 'Untitled') },
     ...t.body.filter(b => (b.h ?? b.p).trim())

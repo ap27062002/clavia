@@ -1161,9 +1161,30 @@ function mxTplToWord(t, vals = {}) {
   const mark = MX_BLANK_MARK[mxSet(t, 'blanks')] || MX_BLANK_MARK.square;
   /* the marks are escaped too: an angle bracket written raw into the
      file is a tag Word throws away, blank and all */
-  const txt = (x) => esc(x).replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => vals[k]?.trim()
+  const txtPlain = (x) => esc(x).replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => vals[k]?.trim()
     ? esc(vals[k].trim())
     : esc(mark[0]) + (mark[2] ? `<u>${esc(mxFieldLabel(t, k))}</u>` : esc(mxFieldLabel(t, k))) + esc(mark[1]));
+  /* a block's markup carries into the file: bold stays bold, a highlight
+     stays a highlight, a tracked insertion goes in as accepted and a
+     tracked deletion stays out */
+  const txt = (x) => {
+    if (!/[<&]/.test(String(x))) return txtPlain(x);
+    const walk = (node) => [...node.childNodes].map((n) => {
+      if (n.nodeType === 3) return txtPlain(n.data);
+      if (n.nodeType !== 1 || n.tagName === 'DEL') return '';
+      const inner = walk(n);
+      if (!inner) return '';
+      if (n.tagName === 'MARK') return `<span style="background:#F4F08A">${inner}</span>`;
+      const tg = { B: 'b', I: 'i', U: 'u', S: 's' }[n.tagName];
+      return tg ? `<${tg}>${inner}</${tg}>` : inner;
+    }).join('');
+    return walk(mxRichParse(x));
+  };
+  /* how a block sits on the page follows it into the file */
+  const st = (b) => {
+    const s = [b.al && b.al !== 'left' ? `text-align:${b.al}` : '', b.ind ? `margin-left:${b.ind * 28}px` : ''].filter(Boolean).join(';');
+    return s ? ` style="${s}"` : '';
+  };
   const layout = mxSet(t, 'layout'), pt = mxSet(t, 'size');
   const face = { times: "'Times New Roman',serif", arial: 'Arial,sans-serif', calibri: 'Calibri,sans-serif' }[mxSet(t, 'face')];
   /* paper is no longer asked, so it is A4 — what most of the world prints on */
@@ -1181,9 +1202,9 @@ function mxTplToWord(t, vals = {}) {
      Word does not number them and neither does this. */
   let si = 0;
   const body = t.body.filter(b => (b.h ?? b.p).trim()).map(b => {
-    if (layout === 'letter') return b.h !== undefined ? '' : `<p>${txt(b.p)}</p>`;
-    if (b.h !== undefined) { si++; return `<h2>${layout === 'legal' ? si + '.&nbsp;&nbsp;&nbsp;&nbsp;' : ''}${txt(b.h)}</h2>`; }
-    return `<p>${txt(b.p)}</p>`;
+    if (layout === 'letter') return b.h !== undefined ? '' : `<p${st(b)}>${txt(b.p)}</p>`;
+    if (b.h !== undefined) { si++; return `<h2${st(b)}>${layout === 'legal' ? si + '.&nbsp;&nbsp;&nbsp;&nbsp;' : ''}${txt(b.h)}</h2>`; }
+    return `<p${st(b)}>${txt(b.p)}</p>`;
   }).join('');
   const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8">`
     + `<title>${esc(t.name || 'Untitled template')}</title><style>${style}</style></head>`
@@ -1311,6 +1332,70 @@ function mxReadDeal(t, text) {
   return got;
 }
 
+/* ── rich text in a template block ────────────────────────────
+   A block's string carries the little an editor gives a sentence —
+   bold, italic, underline, strikethrough, a highlight — and a tracked
+   edit, kept as <ins>/<del> until it is answered. The string is the
+   exact markup the sheet shows: text escaped, tags from the list below
+   and nothing else, blanks still written {{key}}. A plain string is a
+   plain paragraph, so everything made before this reads unchanged. */
+const MX_RICH = { B: 'b', STRONG: 'b', I: 'i', EM: 'i', U: 'u', S: 's', STRIKE: 's', DEL: 'del', INS: 'ins', MARK: 'mark' };
+const mxRichEsc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+/* what the page shows, read back into the stored string. The browser
+   writes formatting however it likes — a <b>, a styled <span> — and all
+   of it is read back to the one spelling the store uses. */
+function mxRichRead(el) {
+  const ser = (node) => [...node.childNodes].map((n) => {
+    if (n.nodeType === 3) return mxRichEsc(n.data);
+    if (n.nodeType !== 1) return '';
+    if (n.classList.contains('mx-chip')) return `{{${n.dataset.key}}}`;
+    if (n.tagName === 'BR') return ' ';
+    let tag = MX_RICH[n.tagName];
+    if (!tag && n.style) {
+      const bg = n.style.backgroundColor;
+      if (bg && bg !== 'transparent' && bg !== 'inherit') tag = 'mark';
+      else if (n.style.fontWeight === 'bold' || +n.style.fontWeight >= 600) tag = 'b';
+      else if (n.style.fontStyle === 'italic') tag = 'i';
+      else if ((n.style.textDecorationLine || n.style.textDecoration || '').includes('underline')) tag = 'u';
+      else if ((n.style.textDecorationLine || n.style.textDecoration || '').includes('line-through')) tag = 's';
+    }
+    const inner = ser(n);
+    if (!tag || !inner) return inner;
+    return `<${tag}${tag === 'ins' || tag === 'del' ? ' class="mine"' : ''}>${inner}</${tag}>`;
+  }).join('');
+  return ser(el);
+}
+/* the stored string, parsed for the sheet: the tags we write kept and
+   stripped of anything they picked up, every other tag unwrapped to its
+   words. Returns a fragment ready to put in a block. */
+function mxRichParse(text) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = String(text ?? '');
+  const clean = (node) => {
+    for (const c of [...node.childNodes]) {
+      if (c.nodeType === 3) continue;
+      if (c.nodeType !== 1) { c.remove(); continue; }
+      clean(c);
+      if (MX_RICH[c.tagName]) {
+        for (const a of [...c.attributes]) c.removeAttribute(a.name);
+        if (c.tagName === 'INS' || c.tagName === 'DEL') { c.className = 'mine'; c.title = 'Your edit'; }
+      } else c.replaceWith(...c.childNodes);
+    }
+  };
+  clean(tpl.content);
+  return tpl.content;
+}
+/* the words alone: a pending deletion is not in them, a pending
+   insertion is — the clean copy, as text */
+function mxRichPlain(s) {
+  const str = String(s ?? '');
+  if (!/[<&]/.test(str)) return str;
+  const d = document.createElement('div');
+  d.innerHTML = str;
+  for (const x of d.querySelectorAll('del')) x.remove();
+  return d.textContent;
+}
+
 /* Two pages from one: the template itself, where its wording and its blanks
    are written and kept (use = false), and a document being made from it,
    where the blanks are filled by hand, from a document, or from a sentence
@@ -1361,8 +1446,9 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     }
     return gs;
   };
-  /* a blank reads as its field's name here, or as what was filled in */
-  const plain = (s) => (s || '').replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => (use && vals[k]?.trim()) || mxFieldLabel(t, k));
+  /* a blank reads as its field's name here, or as what was filled in;
+     markup reads as its words, with a pending deletion already gone */
+  const plain = (s) => mxRichPlain(s).replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => (use && vals[k]?.trim()) || mxFieldLabel(t, k));
   const secName = (g) => g.head ? (plain(g.head.h).trim() || 'Untitled section') : 'Opening';
   const paraName = (b) => {
     const s = plain(b.p).replace(/\s+/g, ' ').trim();
@@ -1384,21 +1470,107 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     }
   };
   const fill = (el, text) => {
-    el.replaceChildren(...text.split(/(\{\{[a-z0-9_]+\}\})/i).filter(Boolean).map(part => {
-      const m = /^\{\{([a-z0-9_]+)\}\}$/i.exec(part);
-      return m ? chip(m[1]) : part;
-    }));
+    const frag = mxRichParse(text);
+    /* a blank's token becomes its chip wherever it stands, inside markup or not */
+    const w = document.createTreeWalker(frag, NodeFilter.SHOW_TEXT);
+    const hits = [];
+    for (let n = w.nextNode(); n; n = w.nextNode()) if (/\{\{[a-z0-9_]+\}\}/i.test(n.data)) hits.push(n);
+    for (const n of hits) {
+      n.replaceWith(...n.data.split(/(\{\{[a-z0-9_]+\}\})/i).filter(Boolean).map(part => {
+        const m = /^\{\{([a-z0-9_]+)\}\}$/i.exec(part);
+        return m ? chip(m[1]) : document.createTextNode(part);
+      }));
+    }
+    el.replaceChildren(frag);
   };
-  /* reading a paragraph back off the page: its words, and its blanks by name */
-  const read = (el) => [...el.childNodes].map(n => n.nodeType === 3 ? n.data
-    : n.classList?.contains('mx-chip') ? `{{${n.dataset.key}}}` : n.textContent).join('');
+  /* reading a paragraph back off the page: its words with their markup,
+     and its blanks by name */
+  const read = (el) => mxRichRead(el);
   let last = null;       // where the caret last was, for a new blank
+  /* how a block sits on the page: its alignment, and how far it is set in */
+  const decor = (el, b) => {
+    el.style.textAlign = b.al && b.al !== 'left' ? b.al : '';
+    el.style.marginLeft = b.ind ? (b.ind * 28) + 'px' : '';
+  };
+  /* a block's words, written back to it after anything moved them */
+  const persist = (el) => {
+    const b = el.__b;
+    if (!b) return;
+    b[el.tagName === 'H2' ? 'h' : 'p'] = read(el);
+    t.updated = mxNow(); save();
+    if (el.tagName === 'H2') paintIdx(); else queueIdx();
+  };
+
+  /* ── tracked edits, the way the redline editor marks them ─────
+     With Track Changes on, typing becomes an insertion in the author's
+     colour and deleting strikes the words through instead of taking
+     them out. Each mark is answered where it stands — click it, Accept
+     or Reject — or all at once from the ribbon's menu. */
+  let tracking = false;
+  const setCaret = (node, offset) => {
+    const r = document.createRange(); r.setStart(node, offset); r.collapse(true);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    return r;
+  };
+  const textNodesIn = (r) => {
+    const root = r.commonAncestorContainer.nodeType === 3 ? r.commonAncestorContainer.parentNode : r.commonAncestorContainer;
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const out = []; let n;
+    while ((n = w.nextNode())) if (r.intersectsNode(n)) out.push(n);
+    return out;
+  };
+  function markDeleted(host, r, backward) {
+    const marker = document.createTextNode('');
+    const m = r.cloneRange(); m.collapse(backward); m.insertNode(marker);
+    for (const n of textNodesIn(r)) {
+      if (n === marker || !host.contains(n)) continue;
+      const el = n.parentElement;
+      /* a blank is a thing, not words: it is not struck through */
+      if (el.closest('.mx-chip') || el.closest('del')) continue;
+      const s = n === r.startContainer ? r.startOffset : 0, e = n === r.endContainer ? r.endOffset : n.length;
+      if (s >= e) continue;
+      if (e < n.length) n.splitText(e);
+      const mid = s > 0 ? n.splitText(s) : n;
+      /* deleting your own fresh insertion just takes it out */
+      const own = el.closest('ins.mine');
+      if (own) { mid.remove(); if (!own.textContent) own.remove(); continue; }
+      const d = document.createElement('del'); d.className = 'mine'; d.title = 'Your edit';
+      mid.parentNode.insertBefore(d, mid); d.appendChild(mid);
+      const prev = d.previousSibling;
+      if (prev && prev.nodeType === 1 && prev.matches('del.mine')) { while (d.firstChild) prev.appendChild(d.firstChild); d.remove(); }
+    }
+    host.querySelectorAll('del.mine + del.mine').forEach(d => { const p = d.previousElementSibling; while (d.firstChild) p.appendChild(d.firstChild); d.remove(); });
+    const parent = marker.parentNode, idx = [...parent.childNodes].indexOf(marker);
+    marker.remove();
+    const out = document.createRange(); out.setStart(parent, Math.min(idx, parent.childNodes.length)); out.collapse(true);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(out);
+    return out;
+  }
+  function insertTracked(r, text) {
+    const c = r.startContainer, o = r.startOffset;
+    const el = c.nodeType === 3 ? c.parentElement : c;
+    const own = el.closest('ins.mine');
+    if (own && c.nodeType === 3) { c.insertData(o, text); setCaret(c, o + text.length); return; }
+    const inDel = el.closest('del');
+    if (inDel) { r.setStartAfter(inDel); r.collapse(true); }
+    let prev = r.startContainer.nodeType === 3 ? (r.startOffset === 0 ? r.startContainer.previousSibling : null) : r.startContainer.childNodes[r.startOffset - 1];
+    while (prev && prev.nodeType === 3 && !prev.length) prev = prev.previousSibling;
+    if (prev && prev.nodeType === 1 && prev.matches('ins.mine')) {
+      let tn = prev.lastChild;
+      if (!tn || tn.nodeType !== 3) { tn = document.createTextNode(''); prev.appendChild(tn); }
+      tn.appendData(text); setCaret(tn, tn.length); return;
+    }
+    const ins = document.createElement('ins'); ins.className = 'mine'; ins.title = 'Your edit';
+    const tn = document.createTextNode(text); ins.appendChild(tn);
+    r.insertNode(ins); setCaret(tn, tn.length);
+  }
+
   const block = (b) => {
     const isH = b.h !== undefined;
-    if (!editable) { const el = h(isH ? 'h2' : 'p', { class: isH ? 'mx-doc-h' : 'mx-doc-p' }); fill(el, isH ? b.h : b.p); return el; }
-    const el = h(isH ? 'h2' : 'p', { class: isH ? 'mx-doc-h' : 'mx-doc-p', contenteditable: 'plaintext-only', spellcheck: 'false',
+    if (!editable) { const el = h(isH ? 'h2' : 'p', { class: isH ? 'mx-doc-h' : 'mx-doc-p' }); fill(el, isH ? b.h : b.p); decor(el, b); return el; }
+    const el = h(isH ? 'h2' : 'p', { class: isH ? 'mx-doc-h' : 'mx-doc-p', contenteditable: 'true', spellcheck: 'false',
       'data-ph': isH ? 'Heading' : 'Write here',
-      oninput: () => { b[isH ? 'h' : 'p'] = read(el); t.updated = mxNow(); save(); if (isH) paintIdx(); else queueIdx(); },
+      oninput: () => { b[isH ? 'h' : 'p'] = read(el); t.updated = mxNow(); save(); if (isH) paintIdx(); else queueIdx(); paintMarks(); },
       onkeydown: (e) => {
         if (e.key !== 'Enter') return;
         /* Enter starts the next paragraph rather than breaking this one */
@@ -1407,8 +1579,40 @@ function templatePage(t, use = false, shell = false, frozen = false) {
       },
       onblur: () => { const s = getSelection(); if (s.rangeCount && el.contains(s.anchorNode)) last = s.getRangeAt(0).cloneRange(); } });
     fill(el, isH ? b.h : b.p);
+    decor(el, b);
     el.addEventListener('keyup', () => { const s = getSelection(); if (s.rangeCount) last = s.getRangeAt(0).cloneRange(); });
     el.addEventListener('mouseup', () => { const s = getSelection(); if (s.rangeCount) last = s.getRangeAt(0).cloneRange(); });
+    /* paste arrives as words, not as somebody else's markup */
+    el.addEventListener('paste', (e) => {
+      if (tracking) return;              // beforeinput takes it as a tracked insertion
+      e.preventDefault();
+      const text = e.clipboardData?.getData('text/plain') ?? '';
+      if (text) document.execCommand('insertText', false, text.replace(/\s*\n+\s*/g, ' '));
+    });
+    el.addEventListener('beforeinput', (e) => {
+      if (!tracking) return;
+      const sel = getSelection(); if (!sel.rangeCount) return;
+      const ty = e.inputType;
+      if (ty === 'insertText' || ty === 'insertReplacementText' || ty === 'insertFromPaste' || ty === 'insertFromDrop') {
+        const text = e.data ?? (e.dataTransfer ? e.dataTransfer.getData('text/plain') : '');
+        if (!text) return;
+        e.preventDefault();
+        let r = sel.getRangeAt(0).cloneRange();
+        if (!r.collapsed) r = markDeleted(el, r, false);
+        insertTracked(r, text.replace(/\s*\n+\s*/g, ' '));
+        persist(el); paintMarks();
+      } else if (ty.startsWith('delete')) {
+        e.preventDefault();
+        const back = ty.includes('Backward');
+        if (sel.isCollapsed) { try { sel.modify('extend', back ? 'backward' : 'forward', /Word/.test(ty) ? 'word' : 'character'); } catch {} }
+        const r = sel.getRangeAt(0).cloneRange();
+        if (r.collapsed) return;
+        markDeleted(el, r, back);
+        persist(el); paintMarks();
+      } else if (ty === 'insertParagraph' || ty === 'insertLineBreak') {
+        e.preventDefault();
+      }
+    });
     el.__b = b;
     return el;
   };
@@ -1463,6 +1667,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     renumber();
     syncFoldAll();
     paintChips();
+    if (editable) paintMarks();
     if (qIn.value.trim()) filter();
     docScroll.scrollTop = y;
     if (flashId) docBody.querySelector(`[data-id="${flashId}"]`)?.classList.add('is-new');
@@ -2014,13 +2219,188 @@ function templatePage(t, use = false, shell = false, frozen = false) {
        is part of — both under the pointer, where they happen. */
     editable && h('button', { class: 'pbv-add-fb mx-add-sec', type: 'button', onclick: () => addSection() }, 'Add section'));
 
-  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) }, docBar,
+  /* ── the ribbon: the editor's toolbar, as the redline editor has it ──
+     Undo and redo, the inline formats, indents and alignment on the
+     left; the tracked edits, Track Changes itself, Export and the rest
+     on the right. Only where the template is being written: filling one
+     in and reading an old version have nothing to format. */
+  const marksIn = () => [...docBody.querySelectorAll('ins.mine, del.mine')];
+  /* which block the caret is in — or was last in, so a click on the
+     ribbon (which steals nothing: mousedown is eaten) still knows */
+  const curBlockEl = () => {
+    const s = getSelection();
+    let n = s?.rangeCount ? s.anchorNode : null;
+    if (n && !docBody.contains(n)) n = null;
+    n ||= last?.startContainer;
+    const el = n && (n.nodeType === 1 ? n : n.parentElement)?.closest('.mx-doc-h, .mx-doc-p');
+    return el && docBody.contains(el) && el.isContentEditable ? el : docBody.querySelector('[contenteditable]');
+  };
+  const exec = (cmd, val = null) => {
+    const el = curBlockEl();
+    if (!el) return;
+    const s = getSelection();
+    if (!s?.rangeCount || !el.contains(s.anchorNode)) {
+      el.focus();
+      if (last && el.contains(last.startContainer)) { s.removeAllRanges(); s.addRange(last); }
+    }
+    document.execCommand(cmd, false, val);
+    persist(el); paintMarks(); syncRibbon();
+  };
+  const setAlign = (v) => {
+    const el = curBlockEl(); if (!el?.__b) return;
+    el.__b.al = v === 'left' ? undefined : v;
+    decor(el, el.__b);
+    t.updated = mxNow(); save(); syncRibbon();
+  };
+  const nudge = (d) => {
+    const el = curBlockEl(); if (!el?.__b) return;
+    const b = el.__b;
+    b.ind = Math.max(0, Math.min(6, (b.ind || 0) + d)) || undefined;
+    decor(el, b);
+    t.updated = mxNow(); save();
+  };
+  /* a mark is answered where it stands */
+  const resolveMark = (m, how, quiet) => {
+    const host = m.closest('.mx-doc-h, .mx-doc-p');
+    const keep = m.tagName === 'INS' ? how === 'accept' : how === 'reject';
+    if (keep) m.replaceWith(...m.childNodes); else m.remove();
+    if (quiet) return host;
+    if (host) { host.normalize(); persist(host); }
+    paintMarks();
+    return host;
+  };
+  const resolveAll = (how) => {
+    const hosts = new Set();
+    for (const m of marksIn()) { const host = resolveMark(m, how, true); if (host) hosts.add(host); }
+    for (const host of hosts) { host.normalize(); persist(host); }
+    paintMarks();
+    pbToast(how === 'accept' ? 'Accepted every tracked edit' : 'Rejected every tracked edit');
+  };
+  let cleanView = false;
+  const toggleClean = () => { cleanView = !cleanView; sheet.classList.toggle('is-clean', cleanView); };
+  const copyClean = () => {
+    const lines = [plain(t.name || 'Untitled template'), ''];
+    for (const b of t.body) { const s = plain(b.h ?? b.p).trim(); if (s) lines.push(s, ''); }
+    navigator.clipboard?.writeText(lines.join('\n'));
+    pbToast('Copied the clean draft');
+  };
+  const RB = {
+    undo: '<path d="M8.5 5.5 5 9l3.5 3.5"/><path d="M5 9h9a5 5 0 0 1 0 10h-4"/>',
+    redo: '<path d="M15.5 5.5 19 9l-3.5 3.5"/><path d="M19 9h-9a5 5 0 0 0 0 10h4"/>',
+    outdent: '<path d="M4 5h16M12 10h8M12 14h8M4 19h16"/><path d="m8 9.5-3 2.5 3 2.5"/>',
+    indent: '<path d="M4 5h16M12 10h8M12 14h8M4 19h16"/><path d="m5 9.5 3 2.5-3 2.5"/>',
+    alignL: '<path d="M4 6h16M4 10.3h10M4 14.6h16M4 19h10"/>',
+    alignC: '<path d="M4 6h16M7 10.3h10M4 14.6h16M7 19h10"/>',
+    alignR: '<path d="M4 6h16M10 10.3h10M4 14.6h16M10 19h10"/>',
+    track: '<path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 5.5l3 3"/><path d="M4 23h16" stroke-dasharray="2 2.6"/>',
+    export: '<path d="M12 15V4"/><path d="m7.5 8.5 4.5-4.5 4.5 4.5"/><path d="M4.5 14.5v3a3 3 0 0 0 3 3h9a3 3 0 0 0 3-3v-3"/>',
+    more: '<circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/>',
+  };
+  const rbSvg = (p) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
+  const rbBtn = (label, inner, run, cls = '') => h('button', { class: 'mx-rb-b' + (cls ? ' ' + cls : ''), type: 'button',
+    'aria-label': label, 'data-tip': label,
+    onmousedown: (e) => e.preventDefault(), onclick: run,
+    ...(typeof inner === 'string' ? { html: inner } : {}) }, typeof inner === 'string' ? null : inner);
+  const rbSep = () => h('span', { class: 'mx-rb-sep', 'aria-hidden': 'true' });
+  const fmtBtns = [
+    { cmd: 'bold', el: rbBtn('Bold', h('span', { class: 'mx-rb-t', style: 'font-weight:700' }, 'B'), () => exec('bold')) },
+    { cmd: 'italic', el: rbBtn('Italic', h('span', { class: 'mx-rb-t', style: 'font-style:italic' }, 'I'), () => exec('italic')) },
+    { cmd: 'underline', el: rbBtn('Underline', h('span', { class: 'mx-rb-t', style: 'text-decoration:underline' }, 'U'), () => exec('underline')) },
+    { cmd: 'strikeThrough', el: rbBtn('Strikethrough', h('span', { class: 'mx-rb-t', style: 'text-decoration:line-through' }, 'S'), () => exec('strikeThrough')) },
+  ];
+  const hlBtn = rbBtn('Highlight', h('span', { class: 'mx-rb-t mx-rb-hl' }, 'ab'), () => exec('hiliteColor', '#F4F08A'));
+  const alignBtns = [
+    { v: 'left', el: rbBtn('Align left', rbSvg(RB.alignL), () => setAlign('left')) },
+    { v: 'center', el: rbBtn('Align centre', rbSvg(RB.alignC), () => setAlign('center')) },
+    { v: 'right', el: rbBtn('Align right', rbSvg(RB.alignR), () => setAlign('right')) },
+  ];
+  const syncRibbon = () => {
+    if (!editable) return;
+    for (const { cmd, el } of fmtBtns) { try { el.setAttribute('aria-pressed', String(document.queryCommandState(cmd))); } catch { /* no selection */ } }
+    const b = curBlockEl()?.__b;
+    for (const { v, el } of alignBtns) el.setAttribute('aria-pressed', String((b?.al || 'left') === v));
+  };
+  const rbN = h('button', { class: 'mx-rb-n', type: 'button', hidden: true,
+    'data-tip': 'Go to the first tracked edit — click a mark to accept or reject it',
+    onmousedown: (e) => e.preventDefault(),
+    onclick: () => marksIn()[0]?.scrollIntoView({ block: 'center', behavior: 'smooth' }) });
+  const paintMarks = () => {
+    if (!editable) return;
+    const n = marksIn().length;
+    rbN.hidden = !n;
+    if (n) rbN.textContent = mxPlural(n, 'tracked edit');
+  };
+  const trackBtn = h('button', { class: 'mx-rb-b mx-rb-lab', type: 'button', 'aria-pressed': 'false',
+    'data-tip': 'Mark your edits until they are accepted or rejected',
+    onmousedown: (e) => e.preventDefault(),
+    onclick: () => {
+      tracking = !tracking;
+      trackBtn.setAttribute('aria-pressed', String(tracking));
+      pbToast(tracking ? 'Track changes is on: your edits are marked until they are answered.'
+        : 'Track changes is off: edits go straight into the template.');
+    } },
+    h('span', { class: 'mx-rb-ic', html: rbSvg(RB.track) }), h('span', { class: 'mx-rb-l' }, 'Track changes'));
+  const moreBtn = h('button', { class: 'mx-rb-b', type: 'button', 'aria-label': 'More', 'data-tip': 'More', html: rbSvg(RB.more),
+    onclick: (e) => {
+      e.stopPropagation();
+      const n = marksIn().length;
+      menu(moreBtn, [
+        n ? { label: 'Accept all changes', run: () => resolveAll('accept') } : null,
+        n ? { label: 'Reject all changes', run: () => resolveAll('reject') } : null,
+        n ? { rule: true } : null,
+        { label: cleanView ? 'Show markup' : 'Show clean copy', run: toggleClean },
+        { label: 'Copy clean draft', run: copyClean },
+      ]);
+    } });
+  const ribbon = !editable ? null : h('div', { class: 'mx-ribbon' },
+    rbBtn('Undo', rbSvg(RB.undo), () => exec('undo')),
+    rbBtn('Redo', rbSvg(RB.redo), () => exec('redo')),
+    rbSep(),
+    ...fmtBtns.map(x => x.el), hlBtn,
+    rbSep(),
+    rbBtn('Decrease indent', rbSvg(RB.outdent), () => nudge(-1)),
+    rbBtn('Increase indent', rbSvg(RB.indent), () => nudge(1)),
+    rbSep(),
+    ...alignBtns.map(x => x.el),
+    h('span', { class: 'pb-grow' }),
+    rbN,
+    trackBtn,
+    rbBtn('Export — opens in Word', h('span', { class: 'mx-rb-ic', html: rbSvg(RB.export) }), () => mxTplToWord(t), 'mx-rb-lab mx-rb-exp'),
+    moreBtn);
+  if (ribbon) ribbon.querySelector('.mx-rb-exp').append(h('span', { class: 'mx-rb-l' }, 'Export'));
+  /* the pressed states follow the caret */
+  if (editable) {
+    const onSel = () => {
+      if (!page.isConnected) return document.removeEventListener('selectionchange', onSel);
+      const s = getSelection();
+      if (s?.anchorNode && docBody.contains(s.anchorNode)) syncRibbon();
+    };
+    document.addEventListener('selectionchange', onSel);
+  }
+
+  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) }, docBar, ribbon,
     h('div', { class: 'mx-doc-in' },
       editable ? title : h('h1', { class: 'mx-doc-title' }, t.name || 'Untitled template'), docBody, nomatch));
   /* a blank in the document and its field find each other */
   sheet.addEventListener('click', (e) => {
     const c = e.target.closest('.mx-chip');
     if (c) fieldsEl.querySelector(`input[data-key="${c.dataset.key}"]`)?.focus();
+  });
+  /* a tracked edit answers where it stands */
+  if (editable) docBody.addEventListener('click', (e) => {
+    const m = e.target.closest('ins.mine, del.mine');
+    if (!m || !docBody.contains(m)) return;
+    e.preventDefault();
+    const r = m.getBoundingClientRect();
+    document.querySelectorAll('.doc-rl-pop').forEach(x => x.remove());
+    const pop = h('div', { class: 'doc-rl-pop' },
+      h('button', { class: 'doc-rl-act', type: 'button', onclick: () => { pop.remove(); resolveMark(m, 'reject'); } }, 'Reject'),
+      h('button', { class: 'doc-rl-act is-yes', type: 'button', onclick: () => { pop.remove(); resolveMark(m, 'accept'); } }, 'Accept'));
+    document.body.append(pop);
+    pop.style.left = Math.max(10, Math.min(r.left, innerWidth - pop.offsetWidth - 10)) + 'px';
+    pop.style.top = (r.bottom + 6) + 'px';
+    const away = (ev) => { if (!pop.contains(ev.target)) { pop.remove(); removeEventListener('pointerdown', away, true); } };
+    setTimeout(() => addEventListener('pointerdown', away, true), 0);
   });
   const docScroll = h('div', { class: 'mx-tpl-doc' }, sheet);
 
@@ -2072,7 +2452,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
 
   /* ── the draft: the template with what you filled in, as a document in a chat ── */
   const draft = () => {
-    const txt = (s) => s.replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => vals[k]?.trim() || `[${mxFieldLabel(t, k)}]`);
+    const txt = (s) => mxRichPlain(s).replace(/\{\{([a-z0-9_]+)\}\}/gi, (_, k) => vals[k]?.trim() || `[${mxFieldLabel(t, k)}]`);
     const blocks = [{ t: 'h1', v: t.name || 'Untitled' },
       ...t.body.filter(b => (b.h ?? b.p).trim()).map(b => b.h !== undefined ? { t: 'h2', v: txt(b.h) } : { t: 'p', v: txt(b.p) })];
     const who = vals.counterparty?.trim();
