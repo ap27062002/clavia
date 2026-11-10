@@ -2681,6 +2681,10 @@ function templatePage(t, use = false, shell = false, frozen = false) {
   side.inert = sideHidden();
   if (about) about.inert = aboutHidden();
   setSideW(inChat ? SIDE_W.base : (state.mxSideW || SIDE_W.base));
+  /* anything pinned to the page's top corners steps down below the band —
+     by however tall the band actually is, since its tools can wrap */
+  if (ribbon) new ResizeObserver(() =>
+    page.style.setProperty('--mx-band-h', ribbon.offsetHeight + 'px')).observe(ribbon);
 
   /* `/` anywhere on the page (but not while typing) starts a search */
   const slash = (e) => {
