@@ -923,21 +923,17 @@ function templateList() {
       icon: () => quillEl('static', { cls: 'pb-way-quill' }) },
     { key: 'upload', name: 'Upload Template', desc: 'Upload one of your own agreements, and its terms become the blanks.',
       icon: () => { const w = h('span', { html: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + APM_IC.upload + '</svg>' }); return w.firstChild; } },
-    { key: 'prec', name: 'From a Precedent', desc: 'Upload a signed agreement: its terms become placeholders, its formatting stays.',
-      icon: () => { const w = h('span', { html: '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-        + '<path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z"/><path d="M13.5 3v5.5H19"/>'
-        + '<path d="M8.5 13h2.5M13.5 13H16M8.5 16.5h1.5M12.5 16.5h3" stroke-dasharray="0.1 2.4"/></svg>' }); return w.firstChild; } },
   ], (k) => {
     if (k === 'ai') return mxOpen('templates', 'new');
-    /* three ways in: say what it should be, hand over one you already
-       have, or hand over a signed one and keep how it reads */
-    if (k === 'upload' || k === 'prec') {
+    /* two ways in: say what it should be, or hand over one you already
+       have. A precedent to convert is attached in Build with AI instead,
+       where the conversation can ask its one question. */
+    if (k === 'upload') {
       /* a file from your computer: its name and kind are enough to start from, as with Build with AI */
       const pick = h('input', { type: 'file', accept: '.doc,.docx,.pdf,.rtf,.txt,.odt', style: 'display:none' });
       pick.onchange = () => {
         const f = pick.files?.[0]; pick.remove();
         if (!f) return;
-        if (k === 'prec') return mxTplFromPrecedent(f.name);
         newTemplate(templateFrom(f.name, f.name), true);
         pbToast(`Made a template from “${f.name}”`);
       };
@@ -986,7 +982,10 @@ function buildTemplate(text, files, step) {
     if (++i < steps.length) return setTimeout(tick, 800);
     setTimeout(() => {
       if (state.view !== 'templates' || MX.templates.open !== 'new') return;   // left while it was writing
-      const t = newTemplate(templateFrom(from, text ? null : files[0]), true, false);
+      /* a file handed over here is a precedent: the document answers the
+         set questions itself, and only the blanks are asked */
+      if (files.length) return mxTplFromPrecedent(files[0], text);
+      const t = newTemplate(templateFrom(from, null), true, false);
       mxTplEditInChat(t, mxTplAskSet(t, text, files), true);
     }, 800);
   };
@@ -1034,22 +1033,23 @@ function mxTplAskSet(t, text, files) {
 }
 
 /* ── a precedent handed over, turned into a template ──────────
-   The document decides everything but one thing. Its sections become
-   the template's sections, the deal-specific terms — names, dates,
-   amounts — become placeholders, and how it is set (layout, columns,
-   type, size) is read off the document rather than asked. The one
-   thing a document cannot say about itself is how its blanks should be
-   marked, so that is the one question. */
-function mxTplFromPrecedent(name) {
+   Reached from Build with AI, by attaching the document. The document
+   decides everything but one thing. Its sections become the template's
+   sections, the deal-specific terms — names, dates, amounts — become
+   placeholders, and how it is set (layout, columns, type, size) is
+   read off the document rather than asked. The one thing a document
+   cannot say about itself is how its blanks should be marked, so that
+   is the one question. */
+function mxTplFromPrecedent(name, text) {
   /* the file's name, read as a document's: underscores to spaces, the
      suffix a signed copy carries dropped */
   const clean = name.replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ')
     .replace(/\s*\b(signed|executed|final|fully executed)\b\s*$/i, '').trim()
     .replace(/\b([a-z])/g, (_, c) => c.toUpperCase());
-  const t = newTemplate(templateFrom(name, clean), true, false);
-  mxTplEditInChat(t, mxTplAskBlanks(t, name), true);
+  const t = newTemplate(templateFrom(`${text || ''} ${name}`, clean), true, false);
+  mxTplEditInChat(t, mxTplAskBlanks(t, name, text), true);
 }
-function mxTplAskBlanks(t, name) {
+function mxTplAskBlanks(t, name, text) {
   /* how the document is set, read from it (scripted: from its name, the
      same reading mxTplAsk does for "set it like this") */
   const n = name.toLowerCase();
@@ -1076,7 +1076,7 @@ function mxTplAskBlanks(t, name) {
     },
   }));
   return [
-    { role: 'user', text: `Turn ${name} into a template with placeholders.`, files: [{ name }] },
+    { role: 'user', text: text || `Turn ${name} into a template with placeholders.`, files: [{ name }] },
     { role: 'bot', cites: null, artifact: null,
       answer: `Read ${name}. Its sections become the template's sections, and the deal-specific terms `
         + '— names, dates, amounts — become placeholders. How it is set stays the document’s own: '
