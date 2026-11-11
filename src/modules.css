@@ -556,10 +556,6 @@
 }
 .mx-cm-text del + ins { margin-left: .25em; }
 .mx-cm-act { margin: 0 0 6px; font-size: 13px; font-style: italic; color: var(--text); }
-.mx-cm-just { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line-soft); }
-.mx-cm-just-h { display: block; font-size: 12px; font-weight: 600; color: var(--text-soft); margin-bottom: 2px; }
-.mx-cm-just p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-soft); }
-.mx-cm:not(.is-active) .mx-cm-just { display: none; }
 .mx-cm-text ins.mx-cm-chip {
   background: none; text-decoration: none;
   border: 1px dashed var(--line-strong); border-radius: 5px; padding: 0 4px;
@@ -585,20 +581,16 @@
    What it is, the document it came from, and its fields as cards —
    the template editor's panel, not the document's outline. */
 .mx-tpl-flds { display: flex; flex-direction: column; min-width: 0; }
-.mx-side-file {
-  display: flex; align-items: center; gap: 9px; padding: 10px 12px; margin: 4px 0 14px;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
-}
-.mx-side-file-ic, .mx-side-file-ic svg { width: 15px; height: 19px; flex: none; display: block; }
-.mx-side-file-n { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mx-flds-head { display: flex; align-items: center; gap: 8px; margin: 2px 0 10px; }
+.mx-flds-head { display: flex; align-items: center; gap: 8px; margin: 14px 0 10px; }
 .mx-fld-add { flex: none; font-size: 13px; }
 .mx-flds-cap { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--text); }
 .mx-tpl-flds .mx-fs { display: flex; flex-direction: column; gap: 8px; }
 .mx-fld {
-  display: flex; align-items: center; gap: 6px; padding: 10px 8px 10px 14px;
+  display: flex; align-items: center; gap: 6px; padding: 10px 8px 10px 14px; cursor: pointer;
   background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  transition: border-color 140ms var(--ease);
 }
+.mx-fld:hover { border-color: var(--line-strong); }
 .mx-fld-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .mx-fld-l {
   appearance: none; border: 0; background: none; padding: 0; width: 100%;

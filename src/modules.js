@@ -1060,10 +1060,9 @@ function mxTplFromPrecedent(name, text) {
      words. The counterparty is read off the file's name; the rest are
      the values the document carried (scripted: the field's example). */
   const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  /* what a change did and why it did it, said the way a reviewer would
-     say it — it rides on the mark, so the card can show both */
-  const mk = (tag, cls, act, why, s) =>
-    `<${tag} class="${cls}" data-act="${esc(act)}" data-why="${esc(why)}">${s}</${tag}>`;
+  /* what a change did, said the way a reviewer would say it — it rides
+     on the mark, so its card can show it */
+  const mk = (tag, cls, act, s) => `<${tag} class="${cls}" data-act="${esc(act)}">${s}</${tag}>`;
   const first = clean.split(' ')[0];
   const co = first && !/^(mutual|one|two|way|nda|msa|dpa|order|form|master|services?|agreement|notice|reseller|non|renewal|data|processing|short|standard)$/i.test(first)
     ? first : null;
@@ -1075,8 +1074,7 @@ function mxTplFromPrecedent(name, text) {
       const v = was(k);
       if (!v) return m;
       const label = t.fields.find(x => x.key === k)?.label || k;
-      return mk('del', 'clavia', `Make ${label} a blank`,
-        `This was ${v} in the precedent — a term of that deal, not of the template.`, esc(v)) + m;
+      return mk('del', 'clavia', `Make ${label} a blank`, esc(v)) + m;
     });
   }
   /* Not only the placeholders: the precedent's own drafting is brought
@@ -1084,21 +1082,17 @@ function mxTplFromPrecedent(name, text) {
      struck through, what our paper says inserted beside it — and a
      deal-specific sentence that has no place in a template struck out
      whole. (Scripted: the kinds of edit a conversion always makes.) */
-  const pair = (act, why, was1, now) =>
-    mk('del', 'clavia', act, why, was1) + mk('ins', 'clavia', act, why, now);
+  const pair = (act, was1, now) => mk('del', 'clavia', act, was1) + mk('ins', 'clavia', act, now);
   let rewords = 0;
   for (const b of t.body) {
     if (b.h !== undefined || rewords >= 2 || !/\bwill\b/.test(b.p)) continue;
-    b.p = b.p.replace(/\bwill\b/, pair('Use plain obligation wording',
-      'Our house style says “will”; “shall” reads as older drafting and means the same.', 'shall', 'will'));
+    b.p = b.p.replace(/\bwill\b/, pair('Use plain obligation wording', 'shall', 'will'));
     rewords++;
   }
   const days = t.body.find(b => b.p !== undefined && /\b30 days\b/.test(b.p));
-  if (days) days.p = days.p.replace(/\b30 days\b/, pair('Bring the notice period to ours',
-    'The precedent allowed 60 days; our standard notice period is 30.', '60 days', '30 days'));
+  if (days) days.p = days.p.replace(/\b30 days\b/, pair('Bring the notice period to ours', '60 days', '30 days'));
   const liab = t.body.find(b => b.p !== undefined && /liab/i.test(b.p));
   if (liab) liab.p += mk('del', 'clavia', 'Strike the uncapped data liability',
-    `This was negotiated for ${co || 'that counterparty'} alone and has no place in a template.`,
     ` Liability for loss of ${esc(co || 'the customer')}’s data is unlimited.`);
   save();
   mxTplEditInChat(t, mxTplAskBlanks(t, name, text), true);
@@ -1483,12 +1477,11 @@ function mxRichRead(el) {
     const inner = ser(n);
     if (!tag || !inner) return inner;
     /* a tracked edit keeps whose it is — Clavia's (a conversion's) or
-       yours — and, if Clavia made it, what it did and why */
+       yours — and, if Clavia made it, what it did */
     let at = '';
     if (tag === 'ins' || tag === 'del') {
       at = ` class="${n.classList.contains('clavia') ? 'clavia' : 'mine'}"`;
       if (n.dataset.act) at += ` data-act="${mxRichEsc(n.dataset.act)}"`;
-      if (n.dataset.why) at += ` data-why="${mxRichEsc(n.dataset.why)}"`;
     }
     return `<${tag}${at}>${inner}</${tag}>`;
   }).join('');
@@ -1509,13 +1502,11 @@ function mxRichParse(text) {
         const mark = c.tagName === 'INS' || c.tagName === 'DEL';
         const clavia = mark && c.classList.contains('clavia');
         const act = mark ? c.getAttribute('data-act') : null;
-        const why = mark ? c.getAttribute('data-why') : null;
         for (const a of [...c.attributes]) c.removeAttribute(a.name);
         if (mark) {
           c.className = clavia ? 'clavia' : 'mine';
           c.title = clavia ? 'Clavia’s edit' : 'Your edit';
           if (act) c.dataset.act = act;
-          if (why) c.dataset.why = why;
         }
       } else c.replaceWith(...c.childNodes);
     }
@@ -1966,8 +1957,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
   }
   const scrollTo_ = (el) => {
     if (!el) return;
-    const top = el.getBoundingClientRect().top - docScroll.getBoundingClientRect().top + docScroll.scrollTop - 72;
-    docScroll.scrollTo({ top, behavior: 'smooth' });
+    glide(el.getBoundingClientRect().top - docScroll.getBoundingClientRect().top + docScroll.scrollTop - 72);
   };
   /* Renaming a section where you see it listed: the name becomes a field.
      Enter or clicking away keeps it, Escape puts the old one back. */
@@ -2125,6 +2115,35 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     addEventListener('keydown', key, true);
   });
 
+  /* Moving the sheet. Some engines ignore `behavior: 'smooth'` on this
+     scroller and simply do nothing, so the glide is drawn here instead
+     of being asked for — and skipped entirely where motion is not
+     wanted. Everything that takes you somewhere on the page goes
+     through it. */
+  const glide = (top) => {
+    const to = Math.max(0, Math.min(top, docScroll.scrollHeight - docScroll.clientHeight));
+    const from = docScroll.scrollTop;
+    if (Math.abs(to - from) < 2) return;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { docScroll.scrollTop = to; return; }
+    let drawn = false;
+    const t0 = performance.now();
+    const step = (now) => {
+      drawn = true;
+      const k = Math.min(1, (now - t0) / 320);
+      docScroll.scrollTop = from + (to - from) * (1 - (1 - k) ** 3);
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+    /* frames are not promised — a window out of sight is given none. Where
+       none come, the page still arrives, just without the travel. */
+    setTimeout(() => { if (!drawn) docScroll.scrollTop = to; }, 220);
+  };
+  /* where a thing on the page sits, as a scroll position that centres it */
+  const centreOn = (el) => {
+    const r = el.getBoundingClientRect(), box = docScroll.getBoundingClientRect();
+    return r.top - box.top + docScroll.scrollTop - (box.height - r.height) / 2;
+  };
+
   /* ── the fields ── */
   const focusChip = (key) => {
     lit(key, true);
@@ -2132,7 +2151,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     if (!first) return;
     openSection(first.closest('.mx-sec')?.dataset.id);
     const r = first.getBoundingClientRect(), box = docScroll.getBoundingClientRect();
-    if (r.top < box.top + 40 || r.bottom > box.bottom - 40) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (r.top < box.top + 40 || r.bottom > box.bottom - 40) glide(centreOn(first));
   };
   const lit = (key, on) => {
     for (const el of sheet.querySelectorAll('.mx-chip')) el.classList.toggle('is-lit', on && el.dataset.key === key);
@@ -2171,13 +2190,14 @@ function templatePage(t, use = false, shell = false, frozen = false) {
       html: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>',
       onclick: (e) => {
         e.stopPropagation();
-        menu(dots, [
-          { label: 'Go to Blank', icon: 'look', run: () => focusChip(f.key) },
-          { rule: true },
-          { label: 'Delete Field', icon: 'trash', danger: true, run: dropField },
-        ]);
+        menu(dots, [{ label: 'Delete Field', icon: 'trash', danger: true, run: dropField }]);
       } });
-    return h('div', { class: 'mx-fld' },
+    /* the card is the way to its blank: pressing it takes the document
+       there rather than hiding that behind a menu */
+    return h('div', { class: 'mx-fld', onclick: (e) => {
+      if (e.target.closest('button, input')) return;
+      focusChip(f.key);
+    } },
       h('div', { class: 'mx-fld-main' }, name, h('span', { class: 'mx-fld-ty' }, ty)),
       dots);
   };
@@ -2437,7 +2457,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
   const rbN = h('button', { class: 'mx-rb-n', type: 'button', hidden: true,
     'data-tip': 'Go to the first tracked edit — click a mark to accept or reject it',
     onmousedown: (e) => e.preventDefault(),
-    onclick: () => marksIn()[0]?.scrollIntoView({ block: 'center', behavior: 'smooth' }) });
+    onclick: () => { const m = marksIn()[0]; if (m) { openSection(m.closest('.mx-sec')?.dataset.id); glide(centreOn(m)); } } });
 
   /* ── the changes, as cards beside the document ─────────────────
      What the redline editor's rail does: every tracked change is a card
@@ -2479,7 +2499,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     for (const x of docBody.querySelectorAll('ins.is-active, del.is-active')) x.classList.remove('is-active');
     if (m) {
       m.classList.add('is-active');
-      if (scrollDoc) { openSection(m.closest('.mx-sec')?.dataset.id); m.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+      if (scrollDoc) { openSection(m.closest('.mx-sec')?.dataset.id); glide(centreOn(m)); }
     }
     paintCards();
   };
@@ -2514,15 +2534,9 @@ function templatePage(t, use = false, shell = false, frozen = false) {
         h('span', { class: 'mx-cm-who' }, clavia ? 'Clavia' : 'You'),
         h('span', { class: 'mx-cm-from' }, ref)),
       h('div', { class: 'mx-cm-b' },
-        /* what the change does, then the words themselves, then why —
-           a reviewer's three lines */
+        /* what the change does, then the words themselves */
         g.m.dataset.act ? h('p', { class: 'mx-cm-act' }, g.m.dataset.act) : null,
-        h('p', { class: 'mx-cm-text', html: body }),
-        g.m.dataset.why
-          ? h('div', { class: 'mx-cm-just' },
-              h('span', { class: 'mx-cm-just-h' }, 'Justification'),
-              h('p', {}, g.m.dataset.why))
-          : null),
+        h('p', { class: 'mx-cm-text', html: body })),
       h('div', { class: 'mx-cm-f' },
         h('button', { class: 'mx-cm-rej', type: 'button',
           onclick: (e) => { e.stopPropagation(); answerGroup(g, 'reject'); } }, 'Reject'),
@@ -2755,10 +2769,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      fields */
   const panelTitle = h('span', { hidden: true });
   const tplPanel = h('div', { class: 'mx-tpl-flds' },
-    t.sourceFile ? h('div', { class: 'mx-side-file' },
-      h('span', { class: 'mx-side-file-ic', 'aria-hidden': 'true',
-        html: '<svg viewBox="0 0 16 20" fill="none"><path d="M1.5 1.5h9l4 4v13h-13z" fill="#F4F2EF" stroke="#D8D3CC"/><path d="M4.5 8h7M4.5 10.5h7M4.5 13h7M4.5 15.5h5" stroke="#B5AFA6" stroke-width=".9" stroke-linecap="round"/></svg>' }),
-      h('span', { class: 'mx-side-file-n' }, t.sourceFile)) : null,
     h('div', { class: 'mx-flds-head' }, fldCap, h('span', { class: 'pb-grow' }),
       h('button', { class: 'pbv-add-fb mx-fld-add', type: 'button', onclick: () => addField() }, 'Add field')),
     fieldsEl);
