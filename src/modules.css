@@ -465,9 +465,6 @@
    the tools stay, and nothing is cut off at the end */
 .mx-tpl.is-in-chat .mx-doc-bar { gap: 4px; padding-left: 14px; padding-right: 8px; }
 .mx-tpl.is-in-chat .mx-doc-bar .pbv-bar-t { display: none; }
-.mx-tpl.is-in-chat .mx-add-sec { font-size: 0; padding: 0 7px; }
-.mx-tpl.is-in-chat .mx-add-sec::before { content: '+'; font-size: 17px; line-height: 1; }
-.mx-add-sec { flex: none; font-size: 13px; margin-left: 2px; }
 .mx-doc-h:empty::before, .mx-doc-p:empty::before { content: attr(data-ph); color: var(--text-faint); }
 
 /* ── the controls the tracked changes need, on the Sections bar ──
@@ -510,18 +507,14 @@
 .mx-fld-dots { flex: none; }
 
 /* ── a section on the sheet ──
-   No rule under the heading: its chevron sits at the right corner, and a
-   delete and an add-a-paragraph-here come up beside it under the pointer. */
+   No rule under the heading: its chevron sits at the right corner, and
+   nothing else stands beside it. */
 .mx-sec:last-child { margin-bottom: 0; }
 .mx-sec[hidden], .mx-blk[hidden] { display: none; }
 .mx-sec-head .pbv-icon { align-self: center; }
 .mx-sec-fold { order: 3; margin: 0 -6.5px 0 0; }
 .mx-sec-fold svg { width: 13px; height: 13px; transform: rotate(90deg); transition: transform 240ms var(--pb-open); }
 .mx-sec.is-folded .mx-sec-fold svg { transform: none; }
-.mx-sec-tool { opacity: 0; order: 2; margin: 0 -4px 0 0; }
-.mx-sec-head:hover .mx-sec-tool, .mx-sec-tool:focus-visible { opacity: 1; }
-.mx-sec-tool svg, .mx-sec-tool .ico { width: 15px; height: 15px; display: block; }
-.mx-sec-del:hover { color: var(--pos-walkaway); background: var(--pos-walkaway-bg); }
 .mx-sec-wrap { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 280ms var(--pb-open), opacity 200ms var(--ease); }
 .mx-sec.is-folded .mx-sec-wrap { grid-template-rows: 0fr; opacity: 0; }
 /* clipped only while it moves, so nothing is cut off at rest */
