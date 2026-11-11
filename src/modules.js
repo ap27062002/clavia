@@ -1060,6 +1060,10 @@ function mxTplFromPrecedent(name, text) {
      words. The counterparty is read off the file's name; the rest are
      the values the document carried (scripted: the field's example). */
   const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  /* what a change did and why it did it, said the way a reviewer would
+     say it — it rides on the mark, so the card can show both */
+  const mk = (tag, cls, act, why, s) =>
+    `<${tag} class="${cls}" data-act="${esc(act)}" data-why="${esc(why)}">${s}</${tag}>`;
   const first = clean.split(' ')[0];
   const co = first && !/^(mutual|one|two|way|nda|msa|dpa|order|form|master|services?|agreement|notice|reseller|non|renewal|data|processing|short|standard)$/i.test(first)
     ? first : null;
@@ -1069,7 +1073,10 @@ function mxTplFromPrecedent(name, text) {
     const k2 = b.h !== undefined ? 'h' : 'p';
     b[k2] = b[k2].replace(/\{\{([a-z0-9_]+)\}\}/gi, (m, k) => {
       const v = was(k);
-      return v ? `<del class="clavia">${esc(v)}</del>${m}` : m;
+      if (!v) return m;
+      const label = t.fields.find(x => x.key === k)?.label || k;
+      return mk('del', 'clavia', `Make ${label} a blank`,
+        `This was ${v} in the precedent — a term of that deal, not of the template.`, esc(v)) + m;
     });
   }
   /* Not only the placeholders: the precedent's own drafting is brought
@@ -1077,17 +1084,22 @@ function mxTplFromPrecedent(name, text) {
      struck through, what our paper says inserted beside it — and a
      deal-specific sentence that has no place in a template struck out
      whole. (Scripted: the kinds of edit a conversion always makes.) */
-  const DEL = (s) => `<del class="clavia">${s}</del>`, INS = (s) => `<ins class="clavia">${s}</ins>`;
+  const pair = (act, why, was1, now) =>
+    mk('del', 'clavia', act, why, was1) + mk('ins', 'clavia', act, why, now);
   let rewords = 0;
   for (const b of t.body) {
     if (b.h !== undefined || rewords >= 2 || !/\bwill\b/.test(b.p)) continue;
-    b.p = b.p.replace(/\bwill\b/, DEL('shall') + INS('will'));
+    b.p = b.p.replace(/\bwill\b/, pair('Use plain obligation wording',
+      'Our house style says “will”; “shall” reads as older drafting and means the same.', 'shall', 'will'));
     rewords++;
   }
   const days = t.body.find(b => b.p !== undefined && /\b30 days\b/.test(b.p));
-  if (days) days.p = days.p.replace(/\b30 days\b/, DEL('60 days') + INS('30 days'));
+  if (days) days.p = days.p.replace(/\b30 days\b/, pair('Bring the notice period to ours',
+    'The precedent allowed 60 days; our standard notice period is 30.', '60 days', '30 days'));
   const liab = t.body.find(b => b.p !== undefined && /liab/i.test(b.p));
-  if (liab) liab.p += DEL(` Liability for loss of ${esc(co || 'the customer')}’s data is unlimited.`);
+  if (liab) liab.p += mk('del', 'clavia', 'Strike the uncapped data liability',
+    `This was negotiated for ${co || 'that counterparty'} alone and has no place in a template.`,
+    ` Liability for loss of ${esc(co || 'the customer')}’s data is unlimited.`);
   save();
   mxTplEditInChat(t, mxTplAskBlanks(t, name, text), true);
 }
@@ -1470,9 +1482,15 @@ function mxRichRead(el) {
     }
     const inner = ser(n);
     if (!tag || !inner) return inner;
-    /* a tracked edit keeps whose it is: Clavia's (a conversion's) or yours */
-    const by = tag === 'ins' || tag === 'del' ? ` class="${n.classList.contains('clavia') ? 'clavia' : 'mine'}"` : '';
-    return `<${tag}${by}>${inner}</${tag}>`;
+    /* a tracked edit keeps whose it is — Clavia's (a conversion's) or
+       yours — and, if Clavia made it, what it did and why */
+    let at = '';
+    if (tag === 'ins' || tag === 'del') {
+      at = ` class="${n.classList.contains('clavia') ? 'clavia' : 'mine'}"`;
+      if (n.dataset.act) at += ` data-act="${mxRichEsc(n.dataset.act)}"`;
+      if (n.dataset.why) at += ` data-why="${mxRichEsc(n.dataset.why)}"`;
+    }
+    return `<${tag}${at}>${inner}</${tag}>`;
   }).join('');
   return ser(el);
 }
@@ -1488,11 +1506,16 @@ function mxRichParse(text) {
       if (c.nodeType !== 1) { c.remove(); continue; }
       clean(c);
       if (MX_RICH[c.tagName]) {
-        const clavia = (c.tagName === 'INS' || c.tagName === 'DEL') && c.classList.contains('clavia');
+        const mark = c.tagName === 'INS' || c.tagName === 'DEL';
+        const clavia = mark && c.classList.contains('clavia');
+        const act = mark ? c.getAttribute('data-act') : null;
+        const why = mark ? c.getAttribute('data-why') : null;
         for (const a of [...c.attributes]) c.removeAttribute(a.name);
-        if (c.tagName === 'INS' || c.tagName === 'DEL') {
+        if (mark) {
           c.className = clavia ? 'clavia' : 'mine';
           c.title = clavia ? 'Clavia’s edit' : 'Your edit';
+          if (act) c.dataset.act = act;
+          if (why) c.dataset.why = why;
         }
       } else c.replaceWith(...c.childNodes);
     }
@@ -1620,7 +1643,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      With Track Changes on, typing becomes an insertion in the author's
      colour and deleting strikes the words through instead of taking
      them out. Each mark is answered where it stands — click it, Accept
-     or Reject — or all at once from the ribbon's menu. */
+     or Reject — or all at once from the Sections bar's menu. */
   let tracking = false;
   const setCaret = (node, offset) => {
     const r = document.createRange(); r.setStart(node, offset); r.collapse(true);
@@ -2369,46 +2392,13 @@ function templatePage(t, use = false, shell = false, frozen = false) {
        is part of — both under the pointer, where they happen. */
     editable && h('button', { class: 'pbv-add-fb mx-add-sec', type: 'button', onclick: () => addSection() }, 'Add section'));
 
-  /* ── the ribbon: the editor's toolbar, as the redline editor has it ──
-     Undo and redo, the inline formats, indents and alignment on the
-     left; the tracked edits, Track Changes itself, Export and the rest
-     on the right. Only where the template is being written: filling one
-     in and reading an old version have nothing to format. */
+  /* ── the controls the tracked changes need ────────────────────
+     No formatting bar over the document: the page is a page, and the
+     few things a reviewer reaches for — how many changes are open, the
+     rail that shows them, whether typing is marked, and answering them
+     all at once — sit on the Sections bar. Formatting a word is the
+     keyboard's (⌘B, ⌘I, ⌘U). Only where the template is being written. */
   const marksIn = () => [...docBody.querySelectorAll('ins.mine, del.mine, ins.clavia, del.clavia')];
-  /* which block the caret is in — or was last in, so a click on the
-     ribbon (which steals nothing: mousedown is eaten) still knows */
-  const curBlockEl = () => {
-    const s = getSelection();
-    let n = s?.rangeCount ? s.anchorNode : null;
-    if (n && !docBody.contains(n)) n = null;
-    n ||= last?.startContainer;
-    const el = n && (n.nodeType === 1 ? n : n.parentElement)?.closest('.mx-doc-h, .mx-doc-p');
-    return el && docBody.contains(el) && el.isContentEditable ? el : docBody.querySelector('[contenteditable]');
-  };
-  const exec = (cmd, val = null) => {
-    const el = curBlockEl();
-    if (!el) return;
-    const s = getSelection();
-    if (!s?.rangeCount || !el.contains(s.anchorNode)) {
-      el.focus();
-      if (last && el.contains(last.startContainer)) { s.removeAllRanges(); s.addRange(last); }
-    }
-    document.execCommand(cmd, false, val);
-    persist(el); paintMarks(); syncRibbon();
-  };
-  const setAlign = (v) => {
-    const el = curBlockEl(); if (!el?.__b) return;
-    el.__b.al = v === 'left' ? undefined : v;
-    decor(el, el.__b);
-    t.updated = mxNow(); save(); syncRibbon();
-  };
-  const nudge = (d) => {
-    const el = curBlockEl(); if (!el?.__b) return;
-    const b = el.__b;
-    b.ind = Math.max(0, Math.min(6, (b.ind || 0) + d)) || undefined;
-    decor(el, b);
-    t.updated = mxNow(); save();
-  };
   /* a mark is answered where it stands */
   const resolveMark = (m, how, quiet) => {
     const host = m.closest('.mx-doc-h, .mx-doc-p');
@@ -2434,14 +2424,8 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     navigator.clipboard?.writeText(lines.join('\n'));
     pbToast('Copied the clean draft');
   };
+  /* the two marks the Sections bar still needs */
   const RB = {
-    undo: '<path d="M8.5 5.5 5 9l3.5 3.5"/><path d="M5 9h9a5 5 0 0 1 0 10h-4"/>',
-    redo: '<path d="M15.5 5.5 19 9l-3.5 3.5"/><path d="M19 9h-9a5 5 0 0 0 0 10h4"/>',
-    outdent: '<path d="M4 5h16M12 10h8M12 14h8M4 19h16"/><path d="m8 9.5-3 2.5 3 2.5"/>',
-    indent: '<path d="M4 5h16M12 10h8M12 14h8M4 19h16"/><path d="m5 9.5 3 2.5-3 2.5"/>',
-    alignL: '<path d="M4 6h16M4 10.3h10M4 14.6h16M4 19h10"/>',
-    alignC: '<path d="M4 6h16M7 10.3h10M4 14.6h16M7 19h10"/>',
-    alignR: '<path d="M4 6h16M10 10.3h10M4 14.6h16M10 19h10"/>',
     track: '<path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 5.5l3 3"/><path d="M4 23h16" stroke-dasharray="2 2.6"/>',
     more: '<circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/>',
   };
@@ -2450,25 +2434,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     'aria-label': label, 'data-tip': label,
     onmousedown: (e) => e.preventDefault(), onclick: run,
     ...(typeof inner === 'string' ? { html: inner } : {}) }, typeof inner === 'string' ? null : inner);
-  const rbSep = () => h('span', { class: 'mx-rb-sep', 'aria-hidden': 'true' });
-  const fmtBtns = [
-    { cmd: 'bold', el: rbBtn('Bold', h('span', { class: 'mx-rb-t', style: 'font-weight:700' }, 'B'), () => exec('bold')) },
-    { cmd: 'italic', el: rbBtn('Italic', h('span', { class: 'mx-rb-t', style: 'font-style:italic' }, 'I'), () => exec('italic')) },
-    { cmd: 'underline', el: rbBtn('Underline', h('span', { class: 'mx-rb-t', style: 'text-decoration:underline' }, 'U'), () => exec('underline')) },
-    { cmd: 'strikeThrough', el: rbBtn('Strikethrough', h('span', { class: 'mx-rb-t', style: 'text-decoration:line-through' }, 'S'), () => exec('strikeThrough')) },
-  ];
-  const hlBtn = rbBtn('Highlight', h('span', { class: 'mx-rb-t mx-rb-hl' }, 'ab'), () => exec('hiliteColor', '#F4F08A'));
-  const alignBtns = [
-    { v: 'left', el: rbBtn('Align left', rbSvg(RB.alignL), () => setAlign('left')) },
-    { v: 'center', el: rbBtn('Align centre', rbSvg(RB.alignC), () => setAlign('center')) },
-    { v: 'right', el: rbBtn('Align right', rbSvg(RB.alignR), () => setAlign('right')) },
-  ];
-  const syncRibbon = () => {
-    if (!editable) return;
-    for (const { cmd, el } of fmtBtns) { try { el.setAttribute('aria-pressed', String(document.queryCommandState(cmd))); } catch { /* no selection */ } }
-    const b = curBlockEl()?.__b;
-    for (const { v, el } of alignBtns) el.setAttribute('aria-pressed', String((b?.al || 'left') === v));
-  };
   const rbN = h('button', { class: 'mx-rb-n', type: 'button', hidden: true,
     'data-tip': 'Go to the first tracked edit — click a mark to accept or reject it',
     onmousedown: (e) => e.preventDefault(),
@@ -2480,7 +2445,10 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      Accept and Reject, and a click that takes you to the words. A
      deletion and the insertion (or the blank) right after it are one
      change, so they share a card and are answered together. */
-  let showCards = true;
+  /* Full screen there is room for the page and the rail beside it; docked
+     beside a conversation there is not, so the rail starts closed there
+     and Show changes brings it out. */
+  let showCards = !inChat;
   const cmts = h('aside', { class: 'mx-cmts', 'aria-label': 'Tracked changes' });
   const changeGroups = () => {
     const out = [], seen = new Set();
@@ -2545,7 +2513,16 @@ function templatePage(t, use = false, shell = false, frozen = false) {
           : h('span', { class: 'mx-cm-logo', html: rbSvg(RB.track) }),
         h('span', { class: 'mx-cm-who' }, clavia ? 'Clavia' : 'You'),
         h('span', { class: 'mx-cm-from' }, ref)),
-      h('div', { class: 'mx-cm-b' }, h('p', { class: 'mx-cm-text', html: body })),
+      h('div', { class: 'mx-cm-b' },
+        /* what the change does, then the words themselves, then why —
+           a reviewer's three lines */
+        g.m.dataset.act ? h('p', { class: 'mx-cm-act' }, g.m.dataset.act) : null,
+        h('p', { class: 'mx-cm-text', html: body }),
+        g.m.dataset.why
+          ? h('div', { class: 'mx-cm-just' },
+              h('span', { class: 'mx-cm-just-h' }, 'Justification'),
+              h('p', {}, g.m.dataset.why))
+          : null),
       h('div', { class: 'mx-cm-f' },
         h('button', { class: 'mx-cm-rej', type: 'button',
           onclick: (e) => { e.stopPropagation(); answerGroup(g, 'reject'); } }, 'Reject'),
@@ -2563,10 +2540,11 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     if (!editable) return;
     const n = marksIn().length;
     rbN.hidden = !n;
-    if (n) rbN.textContent = mxPlural(n, 'tracked edit');
+    /* beside a chat the bar is short: the number alone, with the tip saying what it counts */
+    if (n) rbN.textContent = inChat ? String(n) : mxPlural(n, 'tracked edit');
     paintCards();
   };
-  const showBtn = h('button', { class: 'mx-rb-b mx-rb-lab', type: 'button', 'aria-pressed': 'true',
+  const showBtn = h('button', { class: 'mx-rb-b mx-rb-lab', type: 'button', 'aria-pressed': String(!inChat),
     'data-tip': 'Each tracked change as a card beside the document',
     onmousedown: (e) => e.preventDefault(),
     onclick: () => {
@@ -2598,56 +2576,14 @@ function templatePage(t, use = false, shell = false, frozen = false) {
         { label: 'Copy clean draft', run: copyClean },
       ]);
     } });
-  /* The band sits over the whole page, outside the outline and the about
-     panel, its tools gathered in the middle — the way Word's ribbon
-     stands over the document rather than on it. */
   /* the dropdowns Word keeps at the toolbar's left hand: the zoom, the
      typeface and its size. The typeface and size are the template's own
      setting — picked here, the whole document follows, and Word gets the
      same when it is exported. */
-  const rbSel = (label, opts, value, pick) => {
-    const sel = h('select', { class: 'mx-rb-sel', 'aria-label': label, 'data-tip': label,
-      onchange: () => pick(sel.value) }, ...opts.map(([v, l]) => h('option', { value: v }, l)));
-    sel.value = value;
-    return sel;
-  };
-  const setSet = (k, v) => {
-    t.set = { ...Object.fromEntries(MX_SET_KEYS.map(x => [x, mxSet(t, x)])), [k]: v };
-    t.updated = mxNow(); save();
-    sheet.className = 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) + (cleanView ? ' is-clean' : '');
-  };
-  const ribbon = !editable ? null : h('div', { class: 'mx-ribbon' },
-    h('div', { class: 'mx-rb-band' },
-      rbBtn('Undo', rbSvg(RB.undo), () => exec('undo')),
-      rbBtn('Redo', rbSvg(RB.redo), () => exec('redo')),
-      rbSep(),
-      rbSel('Zoom', [['90', '90%'], ['100', '100%'], ['110', '110%'], ['125', '125%']], '100',
-        (v) => { sheet.style.zoom = +v / 100; }),
-      rbSel('Typeface', [['times', 'Times New Roman'], ['arial', 'Arial'], ['calibri', 'Calibri']], mxSet(t, 'face'),
-        (v) => setSet('face', v)),
-      rbSel('Text size', [['10', '10'], ['11', '11'], ['12', '12']], String(mxSet(t, 'size')),
-        (v) => setSet('size', v)),
-      rbSep(),
-      ...fmtBtns.map(x => x.el), hlBtn,
-      rbSep(),
-      rbBtn('Decrease indent', rbSvg(RB.outdent), () => nudge(-1)),
-      rbBtn('Increase indent', rbSvg(RB.indent), () => nudge(1)),
-      rbSep(),
-      ...alignBtns.map(x => x.el),
-      rbSep(),
-      rbN,
-      showBtn,
-      trackBtn,
-      moreBtn));
-  /* the pressed states follow the caret */
-  if (editable) {
-    const onSel = () => {
-      if (!page.isConnected) return document.removeEventListener('selectionchange', onSel);
-      const s = getSelection();
-      if (s?.anchorNode && docBody.contains(s.anchorNode)) syncRibbon();
-    };
-    document.addEventListener('selectionchange', onSel);
-  }
+  /* the tracked changes answer from the Sections bar: how many are
+     open, the rail that shows them, whether what you type is marked,
+     and the menu that answers them all at once */
+  if (editable) for (const el of [rbN, showBtn, trackBtn, moreBtn]) docBar.insertBefore(el, find);
 
   const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) }, docBar,
     h('div', { class: 'mx-doc-in' },
@@ -2804,16 +2740,17 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      template editor's panel reads. The sections live on the sheet
      itself. Filling one in keeps the blanks-first panel, and an older
      version keeps the outline it always had. */
-  const panelTitle = h('h2', { class: 'mx-side-name' }, t.name || 'Untitled template');
+  /* the name is the document's own, at the head of the page; the panel
+     carries only what the document cannot: where it came from, and its
+     fields */
+  const panelTitle = h('span', { hidden: true });
   const tplPanel = h('div', { class: 'mx-tpl-flds' },
-    panelTitle,
-    h('p', { class: 'mx-side-kind' }, t.kind || 'Template'),
     t.sourceFile ? h('div', { class: 'mx-side-file' },
       h('span', { class: 'mx-side-file-ic', 'aria-hidden': 'true',
         html: '<svg viewBox="0 0 16 20" fill="none"><path d="M1.5 1.5h9l4 4v13h-13z" fill="#F4F2EF" stroke="#D8D3CC"/><path d="M4.5 8h7M4.5 10.5h7M4.5 13h7M4.5 15.5h5" stroke="#B5AFA6" stroke-width=".9" stroke-linecap="round"/></svg>' }),
       h('span', { class: 'mx-side-file-n' }, t.sourceFile)) : null,
-    h('button', { class: 'mx-fld-add', type: 'button', onclick: () => addField() }, '+ Add'),
-    fldCap,
+    h('div', { class: 'mx-flds-head' }, fldCap, h('span', { class: 'pb-grow' }),
+      h('button', { class: 'pbv-add-fb mx-fld-add', type: 'button', onclick: () => addField() }, 'Add field')),
     fieldsEl);
   const side = h('aside', { class: 'mx-tpl-side' }, back,
     use ? fillAsk() : null,
@@ -2880,7 +2817,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
   const page = h('div', { class: 'mx-tpl' + (use ? ' is-use' : '') + (shell ? ' is-shell' : '')
       + (inChat ? ' is-in-chat' : '') + (sideHidden() ? ' is-side-hidden' : '')
       + (aboutHidden() ? ' is-about-hidden' : '') },
-    ribbon,
     h('div', { class: 'mx-tpl-side-wrap' }, side),
     h('div', { class: 'mx-tpl-main' },
       /* Docked beside its conversation nothing stands over the document
@@ -2907,10 +2843,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
   side.inert = sideHidden();
   if (about) about.inert = aboutHidden();
   setSideW(inChat ? SIDE_W.base : (state.mxSideW || SIDE_W.base));
-  /* anything pinned to the page's top corners steps down below the band —
-     by however tall the band actually is, since its tools can wrap */
-  if (ribbon) new ResizeObserver(() =>
-    page.style.setProperty('--mx-band-h', ribbon.offsetHeight + 'px')).observe(ribbon);
 
   /* `/` anywhere on the page (but not while typing) starts a search */
   const slash = (e) => {
