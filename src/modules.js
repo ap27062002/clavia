@@ -1907,12 +1907,13 @@ function templatePage(t, use = false, shell = false, frozen = false) {
       if (e.target.closest('button, input')) return;
       focusChip(f.key);
     } },
-      h('div', { class: 'mx-fld-main' }, name, h('span', { class: 'mx-fld-ty' }, ty)),
+      h('span', { class: 'mx-fld-no' }, `${t.fields.indexOf(f) + 1}.`),
+      name,
+      h('span', { class: 'mx-fld-ty' }, ty),
       dots);
   };
   const fieldsEl = h('div', { class: 'mx-fs' });
   const fldCap = h('h3', { class: 'mx-flds-cap' });
-  const secCap = h('h3', { class: 'mx-flds-cap' });
   const paintFields = () => {
     fieldsEl.replaceChildren(...t.fields.map(fieldRow));
     fldCap.textContent = `Fields (${t.fields.length})`;
@@ -2078,11 +2079,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      control that folds every section away and opens them all again, and
      the plus that adds a paragraph or a section. */
   const count = h('span', { class: 'pbv-count' });
-  const paintCount = () => {
-    const n = groups().filter(g => g.head).length;
-    count.textContent = n;
-    secCap.textContent = `Sections (${n})`;
-  };
+  const paintCount = () => { count.textContent = groups().filter(g => g.head).length; };
   const foldAllBtn = h('button', { class: 'pbv-add mx-fold-all', type: 'button', onclick: () => foldAll(!allFolded()) });
   const ctxN = h('span', { class: 'pbv-bar-ctx-n' }), ctxT = h('span', { class: 'pbv-bar-ctx-t' });
   const ctx = h('button', { class: 'pbv-bar-ctx', type: 'button', tabindex: '-1', 'aria-hidden': 'true',
@@ -2290,11 +2287,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      fill-in panel does, and whichever is built last would take it */
   const tplPanel = !editable ? null : h('div', { class: 'mx-tpl-flds' },
     h('div', { class: 'mx-flds-head' }, fldCap),
-    fieldsEl,
-    /* and the document's own shape under them: its sections, numbered
-       as the page numbers them, each a press away */
-    h('div', { class: 'mx-flds-head mx-secs-head' }, secCap),
-    idxList);
+    fieldsEl);
   const side = h('aside', { class: 'mx-tpl-side' }, back,
     use ? fillAsk() : null,
     ...(use ? [fieldsBlock] : editable ? [tplPanel] : [outlineBlock]));
