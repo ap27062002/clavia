@@ -1879,10 +1879,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     const name = h('input', { class: 'mx-fld-l', value: f.label, 'aria-label': 'Field name', placeholder: 'Field name',
       oninput: (e) => { f.label = e.target.value; save(); paintChips(f.key); queueIdx(); },
       onfocus: () => focusChip(f.key), onblur: () => lit(f.key, false) });
-    const ty = /date|day of term/i.test(f.key + ' ' + f.label) ? 'Date'
-      : /address|name|party|law|signatory|territory/i.test(f.key + ' ' + f.label) ? 'Text'
-      : /^[\d£$€]/.test(f.hint || '') || /\b(days?|months?|years?|fee|amount|number|cap|seats)\b/i.test(f.key + ' ' + f.label) ? 'Number'
-      : 'Text';
     const dropField = () => {
       t.fields.splice(t.fields.indexOf(f), 1);
       /* its blanks go back to being plain words */
@@ -1909,7 +1905,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     } },
       h('span', { class: 'mx-fld-no' }, `${t.fields.indexOf(f) + 1}.`),
       name,
-      h('span', { class: 'mx-fld-ty' }, ty),
       dots);
   };
   const fieldsEl = h('div', { class: 'mx-fs' });
