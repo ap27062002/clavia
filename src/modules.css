@@ -405,10 +405,24 @@
 .mx-f-in::placeholder { color: var(--text-faint); }
 .mx-f-in:focus { border-bottom-color: var(--text-soft) !important; }
 .mx-f-in.is-hit { animation: mxFieldHit 1.4s var(--ease); }
+/* filling one in, a blank is a card like the template's own fields, so
+   both panels read as the same thing with different work in them */
+.mx-tpl.is-use .mx-fs { gap: 8px; }
+.mx-tpl.is-use .mx-f {
+  margin: 0; padding: 9px 12px 10px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--line);
+  transition: border-color 140ms var(--ease);
+}
+.mx-tpl.is-use .mx-f:hover, .mx-tpl.is-use .mx-f:focus-within { background: var(--surface); border-color: var(--line-strong); }
+.mx-tpl.is-use .mx-f-l { font-size: 12.5px !important; font-weight: 550; color: var(--text) !important; }
+.mx-tpl.is-use .mx-f-in { border-bottom: 0 !important; padding-bottom: 0 !important; }
 @keyframes mxFieldHit { 0%, 30% { background: #FFF3C4; } 100% { background: transparent; } }
 .mx-tpl-links { display: flex; gap: 16px; margin: 16px 0 0 2px; }
 .mx-tpl-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #F6F5F2; }
 .mx-tpl-bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 14px 26px 14px 30px; }
+.mx-tpl-bar .pbv-find.is-open { width: 230px; }
+.mx-tpl-bar .pbv-find:not(.is-open) .pbv-find-ct,
+.mx-tpl-bar .pbv-find:not(.is-open) .pbv-find-x { display: none; }
 .mx-tpl-kind { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-soft); }
 .mx-tpl-bar .btn { padding: 7px 13px; }
 .mx-tpl { --mx-doc-top: 4px; }
