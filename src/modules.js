@@ -1792,25 +1792,20 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      in under it — 1, then 1.1, 1.2. The chevron at the end of a row folds
      it away; its name takes you there. */
   let held = false;           // a place chosen in the outline holds until you scroll
-  let drag = null, renaming = false;
   const idxList = h('div', { class: 'pbv-idx-list mx-idx-list' });
   let idxRaf = 0;
   const queueIdx = () => { if (!idxRaf) idxRaf = requestAnimationFrame(() => { idxRaf = 0; paintIdx(); }); };
+  /* the sections as the document numbers them: the number, the name,
+     and a press that takes you there */
   function paintIdx() {
-    if (drag || renaming) return;
     let si = 0;
     idxList.replaceChildren(...groups().filter(g => g.head).map((g) => {
       const id = secId(g);
       si++;
       const head = h('div', { class: 'pbv-idx-sec', 'data-sec': id },
-        editable && h('span', { class: 'pbv-idx-grip', 'aria-hidden': 'true', 'data-tip': 'Drag to Reorder', html: PBV_GRIP }),
         h('span', { class: 'pbv-idx-no pbv-idx-sec-no' }, `${si}.`),
-        h('button', { class: 'pbv-idx-sec-t', type: 'button',
-          onclick: () => goSec(id),
-          ondblclick: editable ? () => renameSec(id) : null },
-          h('span', { class: 'pbv-idx-sec-name' }, secName(g))),
-        editable && h('button', { class: 'pbv-idx-ren', type: 'button', 'aria-label': 'Rename ' + secName(g),
-          'data-tip': 'Rename Section', html: PBV_PENCIL, onclick: (e) => { e.stopPropagation(); renameSec(id); } }));
+        h('button', { class: 'pbv-idx-sec-t', type: 'button', onclick: () => goSec(id) },
+          h('span', { class: 'pbv-idx-sec-name' }, secName(g))));
       return h('div', { class: 'pbv-idx-group' }, head);
     }));
     markCurrent();
@@ -1826,162 +1821,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     if (!el) return;
     glide(el.getBoundingClientRect().top - docScroll.getBoundingClientRect().top + docScroll.scrollTop - 72);
   };
-  /* Renaming a section where you see it listed: the name becomes a field.
-     Enter or clicking away keeps it, Escape puts the old one back. */
-  function renameSec(id) {
-    const b = blockOf(id);
-    const head = [...idxList.querySelectorAll('.pbv-idx-sec')].find(x => x.dataset.sec === id);
-    const btn = head?.querySelector('.pbv-idx-sec-t');
-    if (!b || !btn) return;
-    const was = b.h;
-    const input = h('input', { class: 'pbv-idx-sec-in', value: plain(was), 'aria-label': 'Section name' });
-    let done = false;
-    const finish = (keep) => {
-      if (done) return;
-      done = true; renaming = false;
-      const next = input.value.trim();
-      if (keep && next && next !== plain(was)) {
-        b.h = next; t.updated = mxNow(); save();
-        const el = docBody.querySelector(`.mx-sec[data-id="${id}"] .mx-doc-h`);
-        if (el) { fill(el, next); paintChips(); }
-      }
-      head.classList.remove('is-renaming');
-      paintIdx();
-    };
-    input.addEventListener('keydown', (e) => {
-      e.stopPropagation();            // Escape here is for the field, not the page
-      if (e.key === 'Enter') finish(true);
-      if (e.key === 'Escape') finish(false);
-    });
-    input.addEventListener('blur', () => finish(true));
-    head.classList.add('is-renaming');
-    btn.replaceWith(input);
-    renaming = true;
-    input.focus(); input.select();
-  }
-
-  /* ── carrying a section to a new place ────────────────────────
-     Pointer-driven rather than the browser's own drag, so the row can
-     follow the hand and the list can open a slot for it as it goes. The
-     order the outline is left in is the order the body takes, and a
-     section brings its paragraphs with it. */
-  const idxNumbers = () => idxList.querySelectorAll('.pbv-idx-group').forEach((g, i) => {
-    g.querySelector('.pbv-idx-sec-no').textContent = `${i + 1}.`;
-  });
-  /* move the slot, and let everything it displaces slide rather than jump */
-  const moveSlot = (place) => {
-    const moved = [...idxList.querySelectorAll('.pbv-idx-sec')];
-    const before = new Map(moved.map(el => [el, el.getBoundingClientRect().top]));
-    place();
-    for (const el of moved) {
-      if (drag.it.contains(el)) continue;
-      const dy = before.get(el) - el.getBoundingClientRect().top;
-      if (!dy) continue;
-      el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }],
-        { duration: 180, easing: 'cubic-bezier(.2,0,0,1)' });
-    }
-    idxNumbers();
-  };
-  const dragStep = (e) => {
-    const { it, ghost } = drag;
-    ghost.style.left = (e.clientX - drag.dx) + 'px';
-    ghost.style.top = (e.clientY - drag.dy) + 'px';
-    drag.y = e.clientY;
-    /* it goes before the first heading the pointer is above */
-    const next = [...idxList.children].filter(g => g !== it).find(g => {
-      const r = g.querySelector('.pbv-idx-sec').getBoundingClientRect();
-      return e.clientY < r.top + r.height / 2;
-    }) || null;
-    if (it.nextElementSibling !== next) moveSlot(() => idxList.insertBefore(it, next));
-  };
-  const dragScroll = () => {
-    if (!drag) return;
-    const r = side.getBoundingClientRect();
-    if (drag.y < r.top + 44) side.scrollTop -= 7;
-    else if (drag.y > r.bottom - 44) side.scrollTop += 7;
-    drag.raf = requestAnimationFrame(dragScroll);
-  };
-  /* the body, read back off the outline: each heading, then the
-     paragraphs that were under it, and whatever opened the document
-     before the first heading still first */
-  const idxOrder = () => {
-    const was = groups();
-    const pre = was.find(g => !g.head);
-    const next = pre ? pre.blocks.slice() : [];
-    for (const g of idxList.querySelectorAll('.pbv-idx-sec')) {
-      const was1 = was.find(x => x.head?.id === g.dataset.sec);
-      if (was1) next.push(was1.head, ...was1.blocks);
-    }
-    return next;
-  };
-  const dragEnd = (cancel) => {
-    const { it, ghost, order } = drag;
-    cancelAnimationFrame(drag.raf);
-    page.classList.remove('is-dragging');
-    const next = cancel ? [] : idxOrder();
-    const changed = !cancel && next.length === t.body.length && next.map(b => b.id).join() !== order;
-    const home = it.querySelector('.pbv-idx-sec').getBoundingClientRect();
-    ghost.classList.add('is-landing');
-    ghost.style.left = home.left + 'px'; ghost.style.top = home.top + 'px';
-    const id = it.querySelector('.pbv-idx-sec').dataset.sec;
-    setTimeout(() => {
-      ghost.remove();
-      drag = null;
-      if (changed) {
-        t.body = next; t.updated = mxNow(); save();
-        paintBody(id);
-        requestAnimationFrame(() => goSec(id));
-      } else paintIdx();
-      spy();
-    }, 200);
-  };
-  idxList.addEventListener('pointerdown', (e) => {
-    if (!editable || e.button !== 0 || drag || renaming) return;
-    if (e.target.closest('.pbv-idx-ren, input')) return;
-    const secHead = e.target.closest('.pbv-idx-sec');
-    if (!secHead) return;
-    const it = secHead.parentElement;
-    const x0 = e.clientX, y0 = e.clientY;
-    const move = (ev) => {
-      if (!drag) {
-        /* a click stays a click until the hand has actually moved */
-        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
-        const r = secHead.getBoundingClientRect();
-        const ghost = secHead.cloneNode(true);
-        ghost.classList.add('pbv-drag-ghost');
-        ghost.style.width = r.width + 'px'; ghost.style.left = r.left + 'px'; ghost.style.top = r.top + 'px';
-        document.body.append(ghost);
-        drag = { it, ghost, dx: x0 - r.left, dy: y0 - r.top, y: ev.clientY,
-          order: t.body.map(b => b.id).join() };
-        it.classList.add('is-slot');
-        page.classList.add('is-dragging');
-        drag.raf = requestAnimationFrame(dragScroll);
-      }
-      ev.preventDefault();
-      dragStep(ev);
-    };
-    const stop = (cancel) => {
-      removeEventListener('pointermove', move);
-      removeEventListener('pointerup', up);
-      removeEventListener('pointercancel', abort);
-      removeEventListener('keydown', key, true);
-      if (drag) {
-        /* the release would otherwise read as a click, and jump */
-        const eat = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
-        idxList.addEventListener('click', eat, { capture: true });
-        setTimeout(() => idxList.removeEventListener('click', eat, { capture: true }), 0);
-        dragEnd(cancel);
-      }
-    };
-    const up = () => stop(false);
-    const abort = () => stop(true);
-    const key = (ev) => { if (ev.key === 'Escape' && drag) { ev.stopPropagation(); ev.preventDefault(); stop(true); } };
-    addEventListener('pointermove', move);
-    addEventListener('pointerup', up);
-    addEventListener('pointercancel', abort);
-    addEventListener('keydown', key, true);
-  });
-
   /* Moving the sheet. Some engines ignore `behavior: 'smooth'` on this
      scroller and simply do nothing, so the glide is drawn here instead
      of being asked for — and skipped entirely where motion is not
@@ -2073,6 +1912,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
   };
   const fieldsEl = h('div', { class: 'mx-fs' });
   const fldCap = h('h3', { class: 'mx-flds-cap' });
+  const secCap = h('h3', { class: 'mx-flds-cap' });
   const paintFields = () => {
     fieldsEl.replaceChildren(...t.fields.map(fieldRow));
     fldCap.textContent = `Fields (${t.fields.length})`;
@@ -2238,7 +2078,11 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      control that folds every section away and opens them all again, and
      the plus that adds a paragraph or a section. */
   const count = h('span', { class: 'pbv-count' });
-  const paintCount = () => { count.textContent = groups().filter(g => g.head).length; };
+  const paintCount = () => {
+    const n = groups().filter(g => g.head).length;
+    count.textContent = n;
+    secCap.textContent = `Sections (${n})`;
+  };
   const foldAllBtn = h('button', { class: 'pbv-add mx-fold-all', type: 'button', onclick: () => foldAll(!allFolded()) });
   const ctxN = h('span', { class: 'pbv-bar-ctx-n' }), ctxT = h('span', { class: 'pbv-bar-ctx-t' });
   const ctx = h('button', { class: 'pbv-bar-ctx', type: 'button', tabindex: '-1', 'aria-hidden': 'true',
@@ -2446,7 +2290,11 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      fill-in panel does, and whichever is built last would take it */
   const tplPanel = !editable ? null : h('div', { class: 'mx-tpl-flds' },
     h('div', { class: 'mx-flds-head' }, fldCap),
-    fieldsEl);
+    fieldsEl,
+    /* and the document's own shape under them: its sections, numbered
+       as the page numbers them, each a press away */
+    h('div', { class: 'mx-flds-head mx-secs-head' }, secCap),
+    idxList);
   const side = h('aside', { class: 'mx-tpl-side' }, back,
     use ? fillAsk() : null,
     ...(use ? [fieldsBlock] : editable ? [tplPanel] : [outlineBlock]));
