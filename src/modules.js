@@ -1635,10 +1635,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
         h('span', { class: 'mx-sec-n' }), block(g.head),
         h('button', { class: 'pbv-icon mx-sec-fold', type: 'button', html: PB_SVG.chev,
           onclick: () => foldSection(sec, !sec.classList.contains('is-folded')) }),
-        editable && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-del', type: 'button', 'aria-label': 'Delete section',
-          'data-tip': 'Delete Section', html: PBV_TRASH, onclick: () => deleteSection(groupOf(sec.dataset.id)) }),
-        editable && h('button', { class: 'pbv-icon mx-sec-tool mx-sec-add', type: 'button', 'aria-label': 'Add a paragraph to this section',
-          'data-tip': 'Add Paragraph', onclick: () => addParagraph(groupOf(sec.dataset.id)) }, icon('plus', 'ico ico-14'))),
+),
       h('div', { class: 'mx-sec-wrap' }, body));
     foldSection(sec, !open, true);
     return sec;
@@ -1720,21 +1717,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     renumber();
     wrap.querySelector('[contenteditable]')?.focus();
   }
-  /* a new paragraph joins the section you are in, after its last one */
-  function addParagraph(g) {
-    const after = g && (g.blocks.length ? g.blocks[g.blocks.length - 1] : g.head);
-    if (after) return addParaAfter(after);
-    const nb = { id: pbUid('blk'), p: '' };
-    t.body.push(nb); t.updated = mxNow(); save();
-    paintBody(nb.id);
-    focusBlock(nb.id);
-  }
-  function addSection() {
-    const head = { id: pbUid('blk'), h: 'New section' }, body = { id: pbUid('blk'), p: '' };
-    t.body.push(head, body); t.updated = mxNow(); save();
-    paintBody(head.id);
-    focusBlock(head.id, true);
-  }
   const focusBlock = (id, select) => {
     const host = docBody.querySelector(`[data-id="${id}"]`);
     host?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1759,25 +1741,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     const el = docBody.querySelector(`.mx-blk[data-id="${b.id}"]`);
     dropBlocks([b], `“${paraName(b)}”`);
     if (el) pbLeave(el, renumber); else paintBody();
-  }
-  /* a section takes its paragraphs with it, so it asks first and names them */
-  function deleteSection(g) {
-    if (!g?.head) return;
-    const si = groups().filter(x => x.head).findIndex(x => x.head.id === g.head.id) + 1;
-    const n = g.blocks.length;
-    pbConfirm({
-      title: `Delete “${secName(g)}”?`,
-      lead: !n ? 'This section will be deleted.'
-        : n === 1 ? 'This section and the paragraph in it will be deleted.'
-        : `This section and the ${n} paragraphs in it will be deleted.`,
-      items: g.blocks.map((b, i) => ({ n: `${si}.${i + 1}`, t: paraName(b) })),
-      action: 'Delete section',
-      run: () => {
-        const sec = docBody.querySelector(`.mx-sec[data-id="${g.head.id}"]`);
-        secFolded.delete(g.head.id);
-        dropBlocks([g.head, ...g.blocks], `“${secName(g)}”${n ? ` and its ${n === 1 ? 'paragraph' : n + ' paragraphs'}` : ''}`);
-        if (sec) pbLeave(sec, renumber); else paintBody();
-      } });
   }
 
   /* ── the outline ──────────────────────────────────────────────
@@ -2248,12 +2211,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     h('div', { class: 'pbv-bar-sub' }, ctx),
     h('span', { class: 'pb-grow' }),
     find,
-    foldAllBtn,
-    /* one named thing rather than a plus that hides a menu: a section is
-       what you add to a document from up here. A paragraph is added
-       inside the section it belongs to, and a blank in the sentence it
-       is part of — both under the pointer, where they happen. */
-    editable && h('button', { class: 'pbv-add-fb mx-add-sec', type: 'button', onclick: () => addSection() }, 'Add section'));
+    foldAllBtn);
 
   /* ── the controls the tracked changes need ────────────────────
      No formatting bar over the document: the page is a page, and the
@@ -2283,7 +2241,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
         { label: 'Copy the words', run: () => copyClean() },
         /* with no bar over the page, what the bar carried is here */
         bare ? { rule: true } : null,
-        bare ? { label: 'Add section', run: () => addSection() } : null,
         bare ? { label: allFolded() ? 'Expand all sections' : 'Collapse all sections', run: () => foldAll(!allFolded()) } : null,
       ]);
     } });
