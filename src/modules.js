@@ -2568,24 +2568,34 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     onclick: (e) => {
       e.stopPropagation();
       const n = marksIn().length;
+      const bare = shell && editable;
       menu(moreBtn, [
         n ? { label: 'Accept all changes', run: () => resolveAll('accept') } : null,
         n ? { label: 'Reject all changes', run: () => resolveAll('reject') } : null,
         n ? { rule: true } : null,
         { label: cleanView ? 'Show markup' : 'Show clean copy', run: toggleClean },
         { label: 'Copy clean draft', run: copyClean },
+        /* with no bar over the page, what the bar carried is here */
+        bare ? { rule: true } : null,
+        bare ? { label: 'Add section', run: () => addSection() } : null,
+        bare ? { label: allFolded() ? 'Expand all sections' : 'Collapse all sections', run: () => foldAll(!allFolded()) } : null,
       ]);
     } });
   /* the dropdowns Word keeps at the toolbar's left hand: the zoom, the
      typeface and its size. The typeface and size are the template's own
      setting — picked here, the whole document follows, and Word gets the
      same when it is exported. */
-  /* the tracked changes answer from the Sections bar: how many are
-     open, the rail that shows them, whether what you type is marked,
-     and the menu that answers them all at once */
-  if (editable) for (const el of [rbN, showBtn, trackBtn, moreBtn]) docBar.insertBefore(el, find);
+  /* Where the tools live. In the shell the document is a document: the
+     page has nothing over it, and what it needs — the search, the
+     changes still open, the rail, Track Changes and the menu — sits in
+     the header the shell already draws, the way an application keeps
+     its controls off the paper. The page being filled in has no such
+     header, so it keeps the bar. */
+  const inShell = shell && editable;
+  const shellTools = inShell ? [find, rbN, showBtn, trackBtn, moreBtn] : null;
+  if (!inShell && editable) for (const el of [rbN, showBtn, trackBtn, moreBtn]) docBar.insertBefore(el, find);
 
-  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) }, docBar,
+  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) }, inShell ? null : docBar,
     h('div', { class: 'mx-doc-in' },
       editable ? title : h('h1', { class: 'mx-doc-title' }, t.name || 'Untitled template'), docBody, nomatch));
   /* a blank in the document and its field find each other */
@@ -2840,6 +2850,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     shell ? showSideBtn : null,
     about ? showAboutBtn : null,
     resize);
+  if (shellTools) page.__tools = shellTools;
   side.inert = sideHidden();
   if (about) about.inert = aboutHidden();
   setSideW(inChat ? SIDE_W.base : (state.mxSideW || SIDE_W.base));
@@ -3263,11 +3274,15 @@ RENDER.template = (a) => {
   /* the newest version is the template itself; an older one is the
      record it left, and reads only */
   const latest = isCurrentVersion(a);
+  const body = templatePage(latest ? t : versionOf(a).snap, false, true, !latest);
   /* The newest version opens as its editor, the way Word opens a
      document: the band over the page, everything typable, no mode to
      enter first. Only an older version reads as a record. */
   return {
-    body: templatePage(latest ? t : versionOf(a).snap, false, true, !latest),
+    body,
+    /* the document's own tools, in the shell's header rather than on a
+       bar over the page */
+    extras: body.__tools || [],
     /* Edit on the header is the other hand: the same template beside its
        conversation, for asking rather than typing */
     edit: latest && state.view !== 'thread'
