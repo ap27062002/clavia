@@ -248,7 +248,7 @@
 .mx-tpl.is-shell:not(.is-in-chat).is-about-hidden { grid-template-columns: var(--mx-side-w, 320px) minmax(0, 1fr) 0px; }
 .mx-tpl.is-shell:not(.is-in-chat).is-side-hidden { grid-template-columns: 0px minmax(0, 1fr) var(--mx-about-w, 340px); }
 .mx-tpl.is-shell:not(.is-in-chat).is-side-hidden.is-about-hidden { grid-template-columns: 0px minmax(0, 1fr) 0px; }
-.mx-tpl-about-wrap { grid-column: 3; grid-row: 2; min-width: 0; min-height: 0; overflow: hidden; display: flex; }
+.mx-tpl-about-wrap { grid-column: 3; min-width: 0; min-height: 0; overflow: hidden; display: flex; }
 .mx-tpl-about {
   flex: none; box-sizing: border-box; width: var(--mx-about-w, 340px);
   min-height: 0; overflow-y: auto; padding: 14px 20px 36px;
@@ -257,8 +257,7 @@
 }
 .mx-tpl.is-about-hidden .mx-tpl-about { opacity: 0; visibility: hidden; transition: opacity 220ms var(--ease), visibility 0s 360ms; }
 .mx-tpl.is-shell:not(.is-in-chat) .mx-show-about {
-  /* the band, when it is up, is above this corner: the pill steps down below it */
-  position: absolute; top: calc(var(--mx-doc-top, 22px) + var(--mx-band-h, 0px)); right: 16px; z-index: 3; margin: 0;
+  position: absolute; top: var(--mx-doc-top, 22px); right: 16px; z-index: 3; margin: 0;
   opacity: 0; visibility: hidden; transform: translateX(8px);
   transition: opacity 120ms var(--ease), transform 200ms var(--ease), visibility 0s 120ms;
 }
@@ -315,8 +314,6 @@
   position: relative;
   flex: 1; min-height: 0;
   display: grid; grid-template-columns: var(--mx-side-w, 320px) minmax(0, 1fr);
-  /* row 1 is the editor's band, there only while editing; everything else lives on row 2 */
-  grid-template-rows: auto minmax(0, 1fr);
   animation: rise 420ms var(--ease-out) backwards;
   /* the panel's column closes and opens in one motion, the document riding along */
   transition: grid-template-columns 360ms cubic-bezier(.4, 0, .1, 1);
@@ -326,8 +323,8 @@
 .mx-tpl.is-resizing, .mx-tpl.is-resizing * { cursor: col-resize !important; user-select: none; }
 /* the panel is held by its right edge in a column that clips, so it slides
    out whole rather than being squeezed */
-.mx-tpl-side-wrap { grid-column: 1; grid-row: 2; min-width: 0; min-height: 0; overflow: hidden; display: flex; justify-content: flex-end; }
-.mx-tpl-main { grid-column: 2; grid-row: 2; }
+.mx-tpl-side-wrap { grid-column: 1; min-width: 0; min-height: 0; overflow: hidden; display: flex; justify-content: flex-end; }
+.mx-tpl-main { grid-column: 2; }
 .mx-tpl-side {
   flex: none; box-sizing: border-box; width: var(--mx-side-w, 320px);
   min-height: 0; overflow-y: auto; padding: 26px 18px 40px 26px;
@@ -357,8 +354,7 @@
    the corner of the view — there however far down the document you are,
    the way the playbook's is */
 .mx-tpl.is-shell .mx-show-side {
-  /* the band, when it is up, is above this corner: the pill steps down below it */
-  position: absolute; top: calc(var(--mx-doc-top, 22px) + var(--mx-band-h, 0px)); left: 16px; z-index: 3; margin: 0;
+  position: absolute; top: var(--mx-doc-top, 22px); left: 16px; z-index: 3; margin: 0;
   opacity: 0; visibility: hidden; transform: translateX(-8px);
   transition: opacity 120ms var(--ease), transform 200ms var(--ease), visibility 0s 120ms;
 }
@@ -451,52 +447,36 @@
 .mx-doc-bar .pbv-find:not(.is-open) .pbv-find-x { display: none; }
 .mx-doc-bar .pbv-bar-ctx { background: #FCFBF9; padding: 0 calc(var(--mx-margin) - 7.5px) 0 var(--mx-margin); }
 .mx-fold-all:disabled { opacity: .35; pointer-events: none; }
+/* docked beside a chat the bar is short: the word goes, the count and
+   the tools stay, and nothing is cut off at the end */
+.mx-tpl.is-in-chat .mx-doc-bar { gap: 4px; padding-left: 14px; padding-right: 8px; }
+.mx-tpl.is-in-chat .mx-doc-bar .pbv-bar-t { display: none; }
+.mx-tpl.is-in-chat .mx-add-sec { font-size: 0; padding: 0 7px; }
+.mx-tpl.is-in-chat .mx-add-sec::before { content: '+'; font-size: 17px; line-height: 1; }
 .mx-add-sec { flex: none; font-size: 13px; margin-left: 2px; }
 .mx-doc-h:empty::before, .mx-doc-p:empty::before { content: attr(data-ph); color: var(--text-faint); }
 
-/* ── the band: the editor's toolbar, over the whole page ──
-   The redline editor's toolbar as Word has it: one band across the top
-   of the window, outside the outline on the left and the about panel on
-   the right, its tools gathered in the middle. It is there only while
-   the template is being edited — Edit brings it up, Done puts it away. */
-.mx-ribbon {
-  grid-column: 1 / -1; grid-row: 1;
-  display: flex; align-items: center; justify-content: center;
-  min-height: 40px; padding: 4px 16px;
-  background: var(--surface, #fff);
-  border-bottom: 1px solid var(--line);
-  z-index: 5;
-}
-.mx-rb-band { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; justify-content: center; }
+/* ── the controls the tracked changes need, on the Sections bar ──
+   There is no formatting bar over the document: the page is a page.
+   What a reviewer reaches for — the count still open, the rail, whether
+   typing is marked, the rest — rides on the bar the sections have. */
 .mx-rb-b {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none;
-  min-width: 28px; height: 28px; padding: 0 5px; border: 0; border-radius: 7px;
+  min-width: 26px; height: 26px; padding: 0 6px; border: 0; border-radius: 7px;
   background: none; color: var(--text-soft); cursor: pointer; font: inherit; font-size: 12.5px;
 }
 .mx-rb-b:hover { background: rgba(20,20,19,.06); color: var(--text); }
 .mx-rb-b[aria-pressed="true"] { background: rgba(20,20,19,.08); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
-.mx-rb-b svg, .mx-rb-ic svg { width: 16px; height: 16px; display: block; }
+.mx-rb-b svg, .mx-rb-ic svg { width: 15px; height: 15px; display: block; }
 .mx-rb-ic { display: inline-flex; }
-.mx-rb-t { font-size: 13.5px; line-height: 1; width: 15px; text-align: center; }
-.mx-rb-hl { background: #F4F08A; border-radius: 2px; padding: 1px 2px; width: auto; }
-.mx-rb-sep { width: 1px; height: 18px; background: var(--line-soft); margin: 0 4px; flex: none; }
-/* the dropdowns Word keeps on the left: zoom, typeface, size */
-.mx-rb-sel {
-  appearance: none; border: 0; background: none; height: 28px; padding: 0 16px 0 6px; border-radius: 7px;
-  font: inherit; font-size: 12.5px; color: var(--text-soft); cursor: pointer; flex: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239A968E' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 4px center; background-size: 9px;
-}
-.mx-rb-sel:hover { background-color: rgba(20,20,19,.06); color: var(--text); }
-.mx-rb-lab .mx-rb-l { white-space: nowrap; }
+/* on a bar this slim the marks carry it, and the tip says the name */
+.mx-rb-lab .mx-rb-l { display: none; }
 /* the count of edits still waiting on an answer */
 .mx-rb-n {
   border: 0; flex: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 550;
-  color: #3D5FA8; background: rgba(61,95,168,.1); border-radius: 999px; padding: 4px 10px; margin-right: 4px;
+  color: #3D5FA8; background: rgba(61,95,168,.1); border-radius: 999px; padding: 3px 9px; margin-right: 2px;
 }
 .mx-rb-n:hover { background: rgba(61,95,168,.16); }
-/* beside a chat there is no room for the labels, only the marks */
-.mx-tpl.is-in-chat .mx-rb-l { display: none; }
 
 /* ── tracked edits on the sheet ──
    Clavia's (a conversion's) read as a redline reads: deletions in red,
@@ -534,6 +514,10 @@
    puts the rail up and away. */
 .mx-tpl-doc.has-cards { display: flex; align-items: flex-start; justify-content: center; gap: 14px; }
 .mx-tpl-doc.has-cards .mx-doc { flex: 1 1 754px; min-width: 360px; margin: 0; }
+/* beside a conversation the panel is narrow: the page gives way so the
+   cards stay beside it rather than being pushed off the edge */
+.mx-tpl.is-in-chat .mx-tpl-doc.has-cards { gap: 10px; padding-left: 14px; padding-right: 14px; }
+.mx-tpl.is-in-chat .mx-tpl-doc.has-cards .mx-doc { min-width: 0; }
 .mx-tpl-doc:not(.has-cards) .mx-cmts { display: none; }
 .mx-cmts {
   flex: 0 0 258px; min-width: 0; position: sticky; top: 0;
