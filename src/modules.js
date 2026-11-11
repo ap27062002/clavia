@@ -1053,47 +1053,9 @@ function mxTplFromPrecedent(name, text) {
     .replace(/\b([a-z])/g, (_, c) => c.toUpperCase());
   const t = newTemplate(templateFrom(`${text || ''} ${name}`, clean), true, false);
   t.sourceFile = name;
-  /* The conversion shows its work. The value the precedent had stays
-     beside the blank that replaced it, struck through as a tracked
-     change — what was deleted to make each placeholder can be read, and
-     answered: accept where the blank is right, reject to keep the old
-     words. The counterparty is read off the file's name; the rest are
-     the values the document carried (scripted: the field's example). */
-  const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  /* what a change did, said the way a reviewer would say it — it rides
-     on the mark, so its card can show it */
-  const mk = (tag, cls, act, s) => `<${tag} class="${cls}" data-act="${esc(act)}">${s}</${tag}>`;
-  const first = clean.split(' ')[0];
-  const co = first && !/^(mutual|one|two|way|nda|msa|dpa|order|form|master|services?|agreement|notice|reseller|non|renewal|data|processing|short|standard)$/i.test(first)
-    ? first : null;
-  const was = (key) => (key === 'counterparty' && co) ? co
-    : t.fields.find(x => x.key === key)?.hint || null;
-  for (const b of t.body) {
-    const k2 = b.h !== undefined ? 'h' : 'p';
-    b[k2] = b[k2].replace(/\{\{([a-z0-9_]+)\}\}/gi, (m, k) => {
-      const v = was(k);
-      if (!v) return m;
-      const label = t.fields.find(x => x.key === k)?.label || k;
-      return mk('del', 'clavia', `Make ${label} a blank`, esc(v)) + m;
-    });
-  }
-  /* Not only the placeholders: the precedent's own drafting is brought
-     to our standard, each change tracked the same way — what it said
-     struck through, what our paper says inserted beside it — and a
-     deal-specific sentence that has no place in a template struck out
-     whole. (Scripted: the kinds of edit a conversion always makes.) */
-  const pair = (act, was1, now) => mk('del', 'clavia', act, was1) + mk('ins', 'clavia', act, now);
-  let rewords = 0;
-  for (const b of t.body) {
-    if (b.h !== undefined || rewords >= 2 || !/\bwill\b/.test(b.p)) continue;
-    b.p = b.p.replace(/\bwill\b/, pair('Use plain obligation wording', 'shall', 'will'));
-    rewords++;
-  }
-  const days = t.body.find(b => b.p !== undefined && /\b30 days\b/.test(b.p));
-  if (days) days.p = days.p.replace(/\b30 days\b/, pair('Bring the notice period to ours', '60 days', '30 days'));
-  const liab = t.body.find(b => b.p !== undefined && /liab/i.test(b.p));
-  if (liab) liab.p += mk('del', 'clavia', 'Strike the uncapped data liability',
-    ` Liability for loss of ${esc(co || 'the customer')}’s data is unlimited.`);
+  /* The conversion makes placeholders and nothing else: where the
+     precedent named a party, a date or an amount, the template carries
+     a blank. Its wording is left exactly as the document had it. */
   save();
   mxTplEditInChat(t, mxTplAskBlanks(t, name, text), true);
 }
@@ -1127,10 +1089,9 @@ function mxTplAskBlanks(t, name, text) {
     { role: 'user', text: text || `Turn ${name} into a template with placeholders.`, files: [{ name }] },
     { role: 'bot', cites: null, artifact: null,
       answer: `Read ${name}. Its sections become the template's sections, and the deal-specific terms `
-        + '— names, dates, amounts — become placeholders. What each placeholder replaced is struck '
-        + 'through beside it as a tracked change, so you can see what was taken out: accept it where '
-        + 'the blank is right, or reject it to keep the document’s words. How it is set stays the '
-        + `document’s own: ${MX_SET.layout.options.find(o => o.key === read.layout).label.toLowerCase()}, `
+        + '— names, dates, amounts — become placeholders. Nothing else is changed: the wording stays '
+        + 'exactly as the document has it, and how it is set stays the document’s own — '
+        + `${MX_SET.layout.options.find(o => o.key === read.layout).label.toLowerCase()}, `
         + `${MX_SET.face.options.find(o => o.key === read.face).label} ${read.size} pt. `
         + 'One thing the document cannot say is how its blanks should be marked.',
       steps: [{ source: 'internal', query: `Read ${name}`,
@@ -1476,14 +1437,7 @@ function mxRichRead(el) {
     }
     const inner = ser(n);
     if (!tag || !inner) return inner;
-    /* a tracked edit keeps whose it is — Clavia's (a conversion's) or
-       yours — and, if Clavia made it, what it did */
-    let at = '';
-    if (tag === 'ins' || tag === 'del') {
-      at = ` class="${n.classList.contains('clavia') ? 'clavia' : 'mine'}"`;
-      if (n.dataset.act) at += ` data-act="${mxRichEsc(n.dataset.act)}"`;
-    }
-    return `<${tag}${at}>${inner}</${tag}>`;
+    return `<${tag}>${inner}</${tag}>`;
   }).join('');
   return ser(el);
 }
@@ -1498,16 +1452,12 @@ function mxRichParse(text) {
       if (c.nodeType === 3) continue;
       if (c.nodeType !== 1) { c.remove(); continue; }
       clean(c);
+      /* a template kept from when edits were tracked: the marks are
+         settled on sight — what was inserted stays, what was struck goes */
+      if (c.tagName === 'DEL') { c.remove(); continue; }
+      if (c.tagName === 'INS') { c.replaceWith(...c.childNodes); continue; }
       if (MX_RICH[c.tagName]) {
-        const mark = c.tagName === 'INS' || c.tagName === 'DEL';
-        const clavia = mark && c.classList.contains('clavia');
-        const act = mark ? c.getAttribute('data-act') : null;
         for (const a of [...c.attributes]) c.removeAttribute(a.name);
-        if (mark) {
-          c.className = clavia ? 'clavia' : 'mine';
-          c.title = clavia ? 'Clavia’s edit' : 'Your edit';
-          if (act) c.dataset.act = act;
-        }
       } else c.replaceWith(...c.childNodes);
     }
   };
@@ -1630,76 +1580,12 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     if (el.tagName === 'H2') paintIdx(); else queueIdx();
   };
 
-  /* ── tracked edits, the way the redline editor marks them ─────
-     With Track Changes on, typing becomes an insertion in the author's
-     colour and deleting strikes the words through instead of taking
-     them out. Each mark is answered where it stands — click it, Accept
-     or Reject — or all at once from the Sections bar's menu. */
-  let tracking = false;
-  const setCaret = (node, offset) => {
-    const r = document.createRange(); r.setStart(node, offset); r.collapse(true);
-    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
-    return r;
-  };
-  const textNodesIn = (r) => {
-    const root = r.commonAncestorContainer.nodeType === 3 ? r.commonAncestorContainer.parentNode : r.commonAncestorContainer;
-    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    const out = []; let n;
-    while ((n = w.nextNode())) if (r.intersectsNode(n)) out.push(n);
-    return out;
-  };
-  function markDeleted(host, r, backward) {
-    const marker = document.createTextNode('');
-    const m = r.cloneRange(); m.collapse(backward); m.insertNode(marker);
-    for (const n of textNodesIn(r)) {
-      if (n === marker || !host.contains(n)) continue;
-      const el = n.parentElement;
-      /* a blank is a thing, not words: it is not struck through */
-      if (el.closest('.mx-chip') || el.closest('del')) continue;
-      const s = n === r.startContainer ? r.startOffset : 0, e = n === r.endContainer ? r.endOffset : n.length;
-      if (s >= e) continue;
-      if (e < n.length) n.splitText(e);
-      const mid = s > 0 ? n.splitText(s) : n;
-      /* deleting your own fresh insertion just takes it out */
-      const own = el.closest('ins.mine');
-      if (own) { mid.remove(); if (!own.textContent) own.remove(); continue; }
-      const d = document.createElement('del'); d.className = 'mine'; d.title = 'Your edit';
-      mid.parentNode.insertBefore(d, mid); d.appendChild(mid);
-      const prev = d.previousSibling;
-      if (prev && prev.nodeType === 1 && prev.matches('del.mine')) { while (d.firstChild) prev.appendChild(d.firstChild); d.remove(); }
-    }
-    host.querySelectorAll('del.mine + del.mine').forEach(d => { const p = d.previousElementSibling; while (d.firstChild) p.appendChild(d.firstChild); d.remove(); });
-    const parent = marker.parentNode, idx = [...parent.childNodes].indexOf(marker);
-    marker.remove();
-    const out = document.createRange(); out.setStart(parent, Math.min(idx, parent.childNodes.length)); out.collapse(true);
-    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(out);
-    return out;
-  }
-  function insertTracked(r, text) {
-    const c = r.startContainer, o = r.startOffset;
-    const el = c.nodeType === 3 ? c.parentElement : c;
-    const own = el.closest('ins.mine');
-    if (own && c.nodeType === 3) { c.insertData(o, text); setCaret(c, o + text.length); return; }
-    const inDel = el.closest('del');
-    if (inDel) { r.setStartAfter(inDel); r.collapse(true); }
-    let prev = r.startContainer.nodeType === 3 ? (r.startOffset === 0 ? r.startContainer.previousSibling : null) : r.startContainer.childNodes[r.startOffset - 1];
-    while (prev && prev.nodeType === 3 && !prev.length) prev = prev.previousSibling;
-    if (prev && prev.nodeType === 1 && prev.matches('ins.mine')) {
-      let tn = prev.lastChild;
-      if (!tn || tn.nodeType !== 3) { tn = document.createTextNode(''); prev.appendChild(tn); }
-      tn.appendData(text); setCaret(tn, tn.length); return;
-    }
-    const ins = document.createElement('ins'); ins.className = 'mine'; ins.title = 'Your edit';
-    const tn = document.createTextNode(text); ins.appendChild(tn);
-    r.insertNode(ins); setCaret(tn, tn.length);
-  }
-
   const block = (b) => {
     const isH = b.h !== undefined;
     if (!editable) { const el = h(isH ? 'h2' : 'p', { class: isH ? 'mx-doc-h' : 'mx-doc-p' }); fill(el, isH ? b.h : b.p); decor(el, b); return el; }
     const el = h(isH ? 'h2' : 'p', { class: isH ? 'mx-doc-h' : 'mx-doc-p', contenteditable: 'true', spellcheck: 'false',
       'data-ph': isH ? 'Heading' : 'Write here',
-      oninput: () => { b[isH ? 'h' : 'p'] = read(el); t.updated = mxNow(); save(); if (isH) paintIdx(); else queueIdx(); paintMarks(); },
+      oninput: () => { b[isH ? 'h' : 'p'] = read(el); t.updated = mxNow(); save(); if (isH) paintIdx(); else queueIdx(); },
       onkeydown: (e) => {
         if (e.key !== 'Enter') return;
         /* Enter starts the next paragraph rather than breaking this one */
@@ -1713,34 +1599,9 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     el.addEventListener('mouseup', () => { const s = getSelection(); if (s.rangeCount) last = s.getRangeAt(0).cloneRange(); });
     /* paste arrives as words, not as somebody else's markup */
     el.addEventListener('paste', (e) => {
-      if (tracking) return;              // beforeinput takes it as a tracked insertion
       e.preventDefault();
       const text = e.clipboardData?.getData('text/plain') ?? '';
       if (text) document.execCommand('insertText', false, text.replace(/\s*\n+\s*/g, ' '));
-    });
-    el.addEventListener('beforeinput', (e) => {
-      if (!tracking) return;
-      const sel = getSelection(); if (!sel.rangeCount) return;
-      const ty = e.inputType;
-      if (ty === 'insertText' || ty === 'insertReplacementText' || ty === 'insertFromPaste' || ty === 'insertFromDrop') {
-        const text = e.data ?? (e.dataTransfer ? e.dataTransfer.getData('text/plain') : '');
-        if (!text) return;
-        e.preventDefault();
-        let r = sel.getRangeAt(0).cloneRange();
-        if (!r.collapsed) r = markDeleted(el, r, false);
-        insertTracked(r, text.replace(/\s*\n+\s*/g, ' '));
-        persist(el); paintMarks();
-      } else if (ty.startsWith('delete')) {
-        e.preventDefault();
-        const back = ty.includes('Backward');
-        if (sel.isCollapsed) { try { sel.modify('extend', back ? 'backward' : 'forward', /Word/.test(ty) ? 'word' : 'character'); } catch {} }
-        const r = sel.getRangeAt(0).cloneRange();
-        if (r.collapsed) return;
-        markDeleted(el, r, back);
-        persist(el); paintMarks();
-      } else if (ty === 'insertParagraph' || ty === 'insertLineBreak') {
-        e.preventDefault();
-      }
     });
     el.__b = b;
     return el;
@@ -1797,7 +1658,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     renumber();
     syncFoldAll();
     paintChips();
-    if (editable) paintMarks();
     if (qIn.value.trim()) filter();
     docScroll.scrollTop = y;
     if (flashId) docBody.querySelector(`[data-id="${flashId}"]`)?.classList.add('is-new');
@@ -2421,35 +2281,13 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      rail that shows them, whether typing is marked, and answering them
      all at once — sit on the Sections bar. Formatting a word is the
      keyboard's (⌘B, ⌘I, ⌘U). Only where the template is being written. */
-  const marksIn = () => [...docBody.querySelectorAll('ins.mine, del.mine, ins.clavia, del.clavia')];
-  /* a mark is answered where it stands */
-  const resolveMark = (m, how, quiet) => {
-    const host = m.closest('.mx-doc-h, .mx-doc-p');
-    const keep = m.tagName === 'INS' ? how === 'accept' : how === 'reject';
-    if (keep) m.replaceWith(...m.childNodes); else m.remove();
-    if (quiet) return host;
-    if (host) { host.normalize(); persist(host); }
-    paintMarks();
-    return host;
-  };
-  const resolveAll = (how) => {
-    const hosts = new Set();
-    for (const m of marksIn()) { const host = resolveMark(m, how, true); if (host) hosts.add(host); }
-    for (const host of hosts) { host.normalize(); persist(host); }
-    paintMarks();
-    pbToast(how === 'accept' ? 'Accepted every tracked edit' : 'Rejected every tracked edit');
-  };
-  let cleanView = false;
-  const toggleClean = () => { cleanView = !cleanView; sheet.classList.toggle('is-clean', cleanView); };
   const copyClean = () => {
     const lines = [plain(t.name || 'Untitled template'), ''];
     for (const b of t.body) { const s = plain(b.h ?? b.p).trim(); if (s) lines.push(s, ''); }
     navigator.clipboard?.writeText(lines.join('\n'));
     pbToast('Copied the clean draft');
   };
-  /* the two marks the Sections bar still needs */
   const RB = {
-    track: '<path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 5.5l3 3"/><path d="M4 23h16" stroke-dasharray="2 2.6"/>',
     more: '<circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/>',
   };
   const rbSvg = (p) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
@@ -2457,141 +2295,12 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     'aria-label': label, 'data-tip': label,
     onmousedown: (e) => e.preventDefault(), onclick: run,
     ...(typeof inner === 'string' ? { html: inner } : {}) }, typeof inner === 'string' ? null : inner);
-  const rbN = h('button', { class: 'mx-rb-n', type: 'button', hidden: true,
-    'data-tip': 'Go to the first tracked edit — click a mark to accept or reject it',
-    onmousedown: (e) => e.preventDefault(),
-    onclick: () => { const m = marksIn()[0]; if (m) { openSection(m.closest('.mx-sec')?.dataset.id); glide(centreOn(m)); } } });
-
-  /* ── the changes, as cards beside the document ─────────────────
-     What the redline editor's rail does: every tracked change is a card
-     — what was struck through, what stands in its place — with its own
-     Accept and Reject, and a click that takes you to the words. A
-     deletion and the insertion (or the blank) right after it are one
-     change, so they share a card and are answered together. */
-  /* Full screen there is room for the page and the rail beside it; docked
-     beside a conversation there is not, so the rail starts closed there
-     and Show changes brings it out. */
-  let showCards = !inChat;
-  const cmts = h('aside', { class: 'mx-cmts', 'aria-label': 'Tracked changes' });
-  const changeGroups = () => {
-    const out = [], seen = new Set();
-    for (const m of marksIn()) {
-      if (seen.has(m)) continue;
-      let next = m.nextSibling;
-      while (next && next.nodeType === 3 && !next.data.trim()) next = next.nextSibling;
-      let pair = null, chip = null;
-      if (m.tagName === 'DEL' && next?.nodeType === 1) {
-        if (next.matches?.('ins.mine, ins.clavia')) { pair = next; seen.add(next); }
-        else if (next.classList?.contains('mx-chip')) chip = next;
-      }
-      out.push({ m, pair, chip });
-    }
-    return out;
-  };
-  const answerGroup = (g, how) => {
-    if (g.pair) { resolveMark(g.m, how, true); resolveMark(g.pair, how); }
-    else resolveMark(g.m, how);
-  };
-  const cmEsc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  /* one card is open at a time, the way the redline editor's rail works:
-     a click puts the footer with Accept and Reject on it, marks the words
-     in the document, and takes you to whichever of the two you were not on */
-  let activeMark = null;
-  const setActiveCard = (m, scrollDoc) => {
-    activeMark = m;
-    for (const x of docBody.querySelectorAll('ins.is-active, del.is-active')) x.classList.remove('is-active');
-    if (m) {
-      m.classList.add('is-active');
-      if (scrollDoc) { openSection(m.closest('.mx-sec')?.dataset.id); glide(centreOn(m)); }
-    }
-    paintCards();
-  };
-  const cardEl = (g) => {
-    /* who made the change is on the mark itself: Clavia's carry its
-       quill and the redline's colours, an edit typed on the page is
-       yours and reads in your blue */
-    const clavia = g.m.classList.contains('clavia');
-    const by = clavia ? 'clavia' : 'mine';
-    const sec = g.m.closest('.mx-sec');
-    const ref = !sec || sec.classList.contains('is-pre') ? 'Opening'
-      : ((sec.querySelector('.mx-sec-n')?.textContent || '') + ' '
-        + (sec.querySelector('.mx-doc-h')?.textContent.trim() || '')).trim();
-    /* the change in its sentence: a few of the words around it, the way
-       the redline editor quotes a clause */
-    const last = g.pair || g.chip || g.m;
-    const lead = (g.m.previousSibling?.textContent || '').split(/\s+/).filter(Boolean).slice(-5).join(' ');
-    const tail = (last.nextSibling?.textContent || '').split(/\s+/).filter(Boolean).slice(0, 5).join(' ');
-    const body = (lead ? `… ${cmEsc(lead)} ` : '')
-      + (g.pair ? `<del class="${by}">${cmEsc(g.m.textContent)}</del> <ins class="${by}">${cmEsc(g.pair.textContent)}</ins>`
-        : g.chip ? `<del class="${by}">${cmEsc(g.m.textContent)}</del> <ins class="mx-cm-chip">${cmEsc(g.chip.textContent)}</ins>`
-        : g.m.tagName === 'DEL' ? `<del class="${by}">${cmEsc(g.m.textContent)}</del>`
-        : `<ins class="${by}">${cmEsc(g.m.textContent)}</ins>`)
-      + (tail ? ` ${cmEsc(tail)} …` : '');
-    return h('div', { class: 'mx-cm' + (g.m === activeMark ? ' is-active' : ''), role: 'button', tabindex: '0',
-      onclick: () => setActiveCard(g.m, true),
-      onkeydown: (e) => { if (e.key === 'Enter') setActiveCard(g.m, true); } },
-      h('div', { class: 'mx-cm-h' },
-        clavia
-          ? quillEl('static', { cls: 'mx-cm-logo' })
-          : h('span', { class: 'mx-cm-logo', html: rbSvg(RB.track) }),
-        h('span', { class: 'mx-cm-who' }, clavia ? 'Clavia' : 'You'),
-        h('span', { class: 'mx-cm-from' }, ref)),
-      h('div', { class: 'mx-cm-b' },
-        /* what the change does, then the words themselves */
-        g.m.dataset.act ? h('p', { class: 'mx-cm-act' }, g.m.dataset.act) : null,
-        h('p', { class: 'mx-cm-text', html: body })),
-      h('div', { class: 'mx-cm-f' },
-        h('button', { class: 'mx-cm-rej', type: 'button',
-          onclick: (e) => { e.stopPropagation(); answerGroup(g, 'reject'); } }, 'Reject'),
-        h('button', { class: 'mx-cm-acc', type: 'button',
-          onclick: (e) => { e.stopPropagation(); answerGroup(g, 'accept'); } }, 'Accept')));
-  };
-  const paintCards = () => {
-    if (!editable) return;
-    const groups = changeGroups();
-    cmts.replaceChildren(...groups.map(cardEl));
-    docScroll.classList.toggle('has-cards', showCards && groups.length > 0);
-  };
-
-  const paintMarks = () => {
-    if (!editable) return;
-    const n = marksIn().length;
-    rbN.hidden = !n;
-    /* beside a chat the bar is short: the number alone, with the tip saying what it counts */
-    if (n) rbN.textContent = inChat ? String(n) : mxPlural(n, 'tracked edit');
-    paintCards();
-  };
-  const showBtn = h('button', { class: 'mx-rb-b mx-rb-lab', type: 'button', 'aria-pressed': String(!inChat),
-    'data-tip': 'Each tracked change as a card beside the document',
-    onmousedown: (e) => e.preventDefault(),
-    onclick: () => {
-      showCards = !showCards;
-      showBtn.setAttribute('aria-pressed', String(showCards));
-      paintCards();
-    } },
-    h('span', { class: 'mx-rb-ic', html: rbSvg('<path d="M3.5 6h9M3.5 10h9M3.5 14h9M3.5 18h9"/><rect x="15.5" y="7.5" width="6" height="6.5" rx="1.4"/><path d="M15.5 17.5h6"/>') }),
-    h('span', { class: 'mx-rb-l' }, 'Show changes'));
-  const trackBtn = h('button', { class: 'mx-rb-b mx-rb-lab', type: 'button', 'aria-pressed': 'false',
-    'data-tip': 'Mark your edits until they are accepted or rejected',
-    onmousedown: (e) => e.preventDefault(),
-    onclick: () => {
-      tracking = !tracking;
-      trackBtn.setAttribute('aria-pressed', String(tracking));
-      pbToast(tracking ? 'Track changes is on: your edits are marked until they are answered.'
-        : 'Track changes is off: edits go straight into the template.');
-    } },
-    h('span', { class: 'mx-rb-ic', html: rbSvg(RB.track) }), h('span', { class: 'mx-rb-l' }, 'Track changes'));
   const moreBtn = h('button', { class: 'mx-rb-b', type: 'button', 'aria-label': 'More', 'data-tip': 'More', html: rbSvg(RB.more),
     onclick: (e) => {
       e.stopPropagation();
-      const n = marksIn().length;
       const bare = shell && editable;
       menu(moreBtn, [
-        n ? { label: 'Accept all changes', run: () => resolveAll('accept') } : null,
-        n ? { label: 'Reject all changes', run: () => resolveAll('reject') } : null,
-        n ? { rule: true } : null,
-        { label: cleanView ? 'Show markup' : 'Show clean copy', run: toggleClean },
-        { label: 'Copy clean draft', run: copyClean },
+        { label: 'Copy the words', run: () => copyClean() },
         /* with no bar over the page, what the bar carried is here */
         bare ? { rule: true } : null,
         bare ? { label: 'Add section', run: () => addSection() } : null,
@@ -2609,13 +2318,13 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      its controls off the paper. The page being filled in has no such
      header, so it keeps the bar. */
   const inShell = shell && editable;
-  const shellTools = inShell ? [find, rbN, showBtn, trackBtn, moreBtn] : null;
+  const shellTools = inShell ? [find, moreBtn] : null;
   /* Filling one in reads the same way: nothing over the paper either,
      its search and its folding carried by the page's own header beside
      Create Draft. Only an old version, which has no header of its own,
      keeps the bar. */
   const bare = inShell || use;
-  if (!inShell && editable) for (const el of [rbN, showBtn, trackBtn, moreBtn]) docBar.insertBefore(el, find);
+  if (!inShell && editable) docBar.insertBefore(moreBtn, find);
 
   const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) }, bare ? null : docBar,
     h('div', { class: 'mx-doc-in' },
@@ -2625,31 +2334,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     const c = e.target.closest('.mx-chip');
     if (c) fieldsEl.querySelector(`input[data-key="${c.dataset.key}"]`)?.focus();
   });
-  /* a tracked edit answers where it stands — or, with the rail up, on
-     its card: clicking the words opens the card, the way the redline
-     editor pairs the two */
-  if (editable) docBody.addEventListener('click', (e) => {
-    const m = e.target.closest('ins.mine, del.mine, ins.clavia, del.clavia');
-    if (!m || !docBody.contains(m)) return;
-    e.preventDefault();
-    if (docScroll.classList.contains('has-cards')) {
-      const g = changeGroups().find(x => x.m === m || x.pair === m);
-      setActiveCard(g ? g.m : m, false);
-      requestAnimationFrame(() => cmts.querySelector('.mx-cm.is-active')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
-      return;
-    }
-    const r = m.getBoundingClientRect();
-    document.querySelectorAll('.doc-rl-pop').forEach(x => x.remove());
-    const pop = h('div', { class: 'doc-rl-pop' },
-      h('button', { class: 'doc-rl-act', type: 'button', onclick: () => { pop.remove(); resolveMark(m, 'reject'); } }, 'Reject'),
-      h('button', { class: 'doc-rl-act is-yes', type: 'button', onclick: () => { pop.remove(); resolveMark(m, 'accept'); } }, 'Accept'));
-    document.body.append(pop);
-    pop.style.left = Math.max(10, Math.min(r.left, innerWidth - pop.offsetWidth - 10)) + 'px';
-    pop.style.top = (r.bottom + 6) + 'px';
-    const away = (ev) => { if (!pop.contains(ev.target)) { pop.remove(); removeEventListener('pointerdown', away, true); } };
-    setTimeout(() => addEventListener('pointerdown', away, true), 0);
-  });
-  const docScroll = h('div', { class: 'mx-tpl-doc' }, sheet, editable ? cmts : null);
+  const docScroll = h('div', { class: 'mx-tpl-doc' }, sheet);
 
   /* ── the outline follows the reading ── */
   let curSec = null;
