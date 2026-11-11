@@ -6734,6 +6734,31 @@ body[data-bare] .br-pane { display: none; }
 .cask-l { display: block; font-size: 13.5px; font-weight: 550; color: var(--text); }
 .cask-d { display: block; margin-top: 1px; font-size: 12.5px; line-height: 1.45; color: var(--text-soft); }
 .cask-opt--other { border-style: dashed; }
+/* a question that takes several answers: a box per option, one that
+   ticks them all, and the button that says you are done */
+.cask-many { display: flex; flex-direction: column; gap: 8px; }
+.cask-all, .cask-opt--many { display: flex; align-items: flex-start; gap: 10px; }
+.cask-all {
+  appearance: none; border: 0; background: none; cursor: pointer; font: inherit;
+  align-items: center; padding: 2px 3px 0; color: var(--text-soft);
+}
+.cask-all .cask-l { font-size: 12.5px; font-weight: 500; color: var(--text-soft); }
+.cask-opt--many { padding: 8px 12px; }
+.cask-opt--many.is-on { border-color: var(--line-strong); }
+.cask-opt--many > span:not(.cask-box) { flex: 1; min-width: 0; }
+.cask-box {
+  flex: none; display: grid; place-items: center; width: 16px; height: 16px; margin-top: 1px;
+  border: 1px solid var(--line-strong); border-radius: 4px; color: transparent;
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+.cask-box svg { width: 11px; height: 11px; display: block; }
+.cask-box.is-on { background: var(--rail-bg, #16301F); border-color: var(--rail-bg, #16301F); color: #fff; }
+.cask-many-foot { display: flex; justify-content: flex-end; padding-top: 2px; }
+.cask-many-go {
+  appearance: none; border: 0; cursor: pointer; font: inherit; font-size: 13px; font-weight: 500;
+  height: 32px; padding: 0 16px; border-radius: 9px; background: var(--rail-bg, #16301F); color: #fff;
+}
+.cask-many-go:disabled { opacity: .45; cursor: default; }
 .cask-opt--other .cask-l { font-weight: 500; color: var(--text-soft); }
 /* saying it in your own words: the option becomes the field */
 .cask-other {

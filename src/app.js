@@ -4201,9 +4201,9 @@ function paintAsk() {
   };
   /* skipping is an answer too: it says take whatever you would have */
   const skip = h('button', { class: 'cask-skip', type: 'button',
-    onclick: () => take({ key: q.def, skipped: true }) }, 'Skip');
+    onclick: () => take(q.multi ? { keys: q.options.map(o => o.key), skipped: true } : { key: q.def, skipped: true }) }, 'Skip');
   const back = askSpec.at > 0 ? h('button', { class: 'cask-back', type: 'button', 'aria-label': 'Back',
-    onclick: () => { askSpec.at--; askSpec.typing = false; paintAsk(); },
+    onclick: () => { askSpec.at--; askSpec.typing = false; askSpec.picked = null; paintAsk(); },
     html: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" '
       + 'stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>' }) : null;
 
@@ -4224,6 +4224,33 @@ function paintAsk() {
     return h('div', { class: 'cask-other' }, input, go);
   };
 
+  /* some questions take several answers at once: every option is a box
+     to tick, with one that ticks them all, and nothing is taken until
+     you say so */
+  const many = () => {
+    const picked = askSpec.picked ||= new Set(q.def ?? q.options.map(o => o.key));
+    const box = (on) => `<span class="cask-box${on ? ' is-on' : ''}" aria-hidden="true">`
+      + (on ? '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" '
+        + 'stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6.5"/></svg>' : '')
+      + '</span>';
+    const all = picked.size === q.options.length;
+    const rows = q.options.map(o => h('button', {
+      class: 'cask-opt cask-opt--many' + (picked.has(o.key) ? ' is-on' : ''), type: 'button',
+      role: 'checkbox', 'aria-checked': String(picked.has(o.key)),
+      onclick: () => { picked.has(o.key) ? picked.delete(o.key) : picked.add(o.key); paintAsk(); },
+      html: box(picked.has(o.key)) },
+      h('span', { class: 'cask-l' }, o.label),
+      o.desc ? h('span', { class: 'cask-d' }, o.desc) : null));
+    const toggleAll = h('button', { class: 'cask-all', type: 'button', role: 'checkbox', 'aria-checked': String(all),
+      onclick: () => { if (all) picked.clear(); else q.options.forEach(o => picked.add(o.key)); paintAsk(); },
+      html: box(all) }, h('span', { class: 'cask-l' }, 'Select all'));
+    const go = h('button', { class: 'cask-many-go', type: 'button', disabled: !picked.size,
+      onclick: () => { const keys = [...picked]; askSpec.picked = null; take({ keys }); } },
+      q.done || 'Continue');
+    return h('div', { class: 'cask-many' }, toggleAll, h('div', { class: 'cask-opts' }, ...rows),
+      h('div', { class: 'cask-many-foot' }, go));
+  };
+
   askHost.replaceChildren(h('div', { class: 'cask' },
     h('div', { class: 'cask-top' }, back,
       h('span', { class: 'cask-chip' }, q.header),
@@ -4232,6 +4259,7 @@ function paintAsk() {
       skip),
     h('div', { class: 'cask-q' }, q.question),
     askSpec.typing ? other()
+      : q.multi ? many()
       : h('div', { class: 'cask-opts' },
           ...q.options.map(o => h('button', { class: 'cask-opt', type: 'button', onclick: () => take({ key: o.key }) },
             h('span', { class: 'cask-l' }, o.label),
