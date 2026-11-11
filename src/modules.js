@@ -2070,26 +2070,6 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     fieldsEl.replaceChildren(...t.fields.map(fieldRow));
     fldCap.textContent = `Fields (${t.fields.length})`;
   };
-  /* a new field joins the list and, if the caret was in a sentence, its
-     blank lands right there */
-  function addField() {
-    const f = { key: 'field_' + Math.random().toString(36).slice(2, 8), label: 'New field', hint: '' };
-    t.fields.push(f); t.updated = mxNow(); save();
-    if (last && docBody.contains(last.startContainer)) {
-      const host = (last.startContainer.nodeType === 1 ? last.startContainer : last.startContainer.parentElement)
-        ?.closest('.mx-doc-h, .mx-doc-p');
-      if (host?.isContentEditable) {
-        last.collapse(false);
-        last.insertNode(chip(f.key));
-        persist(host);
-      }
-    }
-    paintFields(); paintProg(); paintChips(f.key);
-    requestAnimationFrame(() => {
-      const inp = fieldsEl.lastElementChild?.querySelector('input');
-      inp?.focus(); inp?.select();
-    });
-  }
   /* values arrive one after another, so you can see where each one went */
   const putVals = (got) => {
     let n = 0;
@@ -2464,8 +2444,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
   /* built only where it is used: it holds the same fields element the
      fill-in panel does, and whichever is built last would take it */
   const tplPanel = !editable ? null : h('div', { class: 'mx-tpl-flds' },
-    h('div', { class: 'mx-flds-head' }, fldCap, h('span', { class: 'pb-grow' }),
-      h('button', { class: 'pbv-add-fb mx-fld-add', type: 'button', onclick: () => addField() }, 'Add field')),
+    h('div', { class: 'mx-flds-head' }, fldCap),
     fieldsEl);
   const side = h('aside', { class: 'mx-tpl-side' }, back,
     use ? fillAsk() : null,
