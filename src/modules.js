@@ -531,7 +531,7 @@ function mxPick({ title, sub, groups, one, action = 'Add', onDone }) {
 /* ── a page that asks ─────────────────────────────────────────
    The New Chat page with a different question over the box — the same
    composer, the same + for files. What Build with AI is to a playbook. */
-function mxCreatePage({ view, back, title, placeholder, run }) {
+function mxCreatePage({ view, back, title, placeholder, run, demo }) {
   const glyph = quillEl('greet', { cls: 'home-glyph', then: 'idle' });
   const ta = h('textarea', { rows: '2', 'aria-label': title, placeholder });
   const send = h('button', { class: 'send', type: 'button', disabled: true, 'aria-label': 'Send', html: ARROW });
@@ -560,6 +560,14 @@ function mxCreatePage({ view, back, title, placeholder, run }) {
     h('div', { class: 'home-head' }, glyph, h('h1', { class: 'display' }, title)),
     h('div', { class: 'askwrap' }, box, status));
   queueMicrotask(() => {
+    /* a link that shows the flow writes the ask and hands the file over
+       itself, then sends — the same shape the playbook demo takes */
+    if (demo) queueMicrotask(() => {
+      ta.value = demo.text || '';
+      syncSend();
+      for (const f of demo.files || []) addFile(f, PB_UPLOAD);
+      if (demo.go) setTimeout(() => { if (page.isConnected && !ta.disabled) send.click(); }, demo.go);
+    });
     composer = initComposer(box, { noModel: true, noTokens: true, attach,
       onSend: (_, { pills }) => {
         const text = ta.value.trim();
@@ -871,7 +879,8 @@ const MX_TPL_TABS = { Agreement: 'Agreements', Addendum: 'Addenda', 'Order form'
 function templatesView() {
   const o = MX.templates.open;
   if (o === 'new') return mxCreatePage({ view: 'templates', back: 'Templates', title: 'Create New Template',
-    placeholder: 'Describe the document you want a template for, or add one of your own', run: buildTemplate });
+    placeholder: 'Describe the document you want a template for, or add one of your own',
+    run: buildTemplate, demo: MX.templates.demo });
   /* #templates/<id>/use is a document being made from the template, and
      has a page of its own. #templates/<id> is the template, which is an
      artifact: the list shows, and the document opens over it. */
@@ -1078,17 +1087,41 @@ function mxTplFromPrecedent(name, text) {
   save();
   mxTplEditInChat(t, mxTplAskBlanks(t, name, text), true);
 }
-function mxTplAskBlanks(t, name, text) {
-  /* how the document is set, read from it (scripted: from its name, the
-     same reading mxTplAsk does for "set it like this") */
+/* how the document is set, read from it (scripted: from its name, the
+   same reading mxTplAsk does for "set it like this") */
+const mxTplRead = (name) => {
   const n = name.toLowerCase();
-  const read = {
+  return {
     stance: 'standard',
     layout: /letter|notice|memo/.test(n) ? 'letter' : 'legal',
     columns: 'one',
     face: /calibri/.test(n) ? 'calibri' : /arial|helvetica/.test(n) ? 'arial' : 'times',
     size: '11',
   };
+};
+/* The conversion itself, once the two things it cannot read off the
+   document are known: which kinds of information come out, and how a
+   blank is marked. A field of a kind that was not asked for keeps what
+   the precedent said — the words go back into the document and the
+   field goes with them. */
+function mxTplConvert(t, name, { kinds, blanks }) {
+  t.set = { ...mxTplRead(name), blanks: blanks || MX_SET.blanks.def };
+  const want = new Set(kinds || MX_KINDS.map(k => k.key));
+  for (const f of t.fields.filter(x => !want.has(mxFieldKind(x)))) {
+    const was = f.hint || mxFieldLabel(t, f.key);
+    for (const b of t.body) {
+      const k2 = b.h !== undefined ? 'h' : 'p';
+      b[k2] = b[k2].split(`{{${f.key}}}`).join(was);
+    }
+  }
+  t.fields = t.fields.filter(f => want.has(mxFieldKind(f)));
+  t.updated = mxNow(); save();
+  mxTplEnsureVersions(t);
+  return [...want];
+}
+
+function mxTplAskBlanks(t, name, text) {
+  const read = mxTplRead(name);
   queueMicrotask(() => chatAsk({
     questions: [
       /* which kinds of information come out, the way a Word add-in asks it */
@@ -1099,21 +1132,8 @@ function mxTplAskBlanks(t, name, text) {
         options: MX_SET.blanks.options, def: MX_SET.blanks.def },
     ],
     onDone: (answers) => {
-      t.set = { ...read, blanks: answers.blanks?.key || MX_SET.blanks.def };
-      /* a field whose kind was not asked for keeps what the precedent
-         said: the words go back into the document and the field goes */
-      const want = new Set(answers.kinds?.keys || MX_KINDS.map(k => k.key));
-      const out = t.fields.filter(f => !want.has(mxFieldKind(f)));
-      for (const f of out) {
-        const was = f.hint || mxFieldLabel(t, f.key);
-        for (const b of t.body) {
-          const k2 = b.h !== undefined ? 'h' : 'p';
-          b[k2] = b[k2].split(`{{${f.key}}}`).join(was);
-        }
-      }
-      t.fields = t.fields.filter(f => want.has(mxFieldKind(f)));
-      t.updated = mxNow(); save();
-      mxTplEnsureVersions(t);
+      const want = new Set(mxTplConvert(t, name,
+        { kinds: answers.kinds?.keys, blanks: answers.blanks?.key }));
       const kept = MX_KINDS.filter(k => want.has(k.key)).map(k => k.label.toLowerCase());
       const said = kept.length === MX_KINDS.length ? 'Every kind'
         : kept.length > 1 ? kept.slice(0, -1).join(', ') + ' and ' + kept[kept.length - 1]
