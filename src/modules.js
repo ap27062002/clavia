@@ -934,7 +934,8 @@ function templateList() {
       pick.onchange = () => {
         const f = pick.files?.[0]; pick.remove();
         if (!f) return;
-        newTemplate(templateFrom(f.name, f.name), true);
+        const made = newTemplate(templateFrom(f.name, f.name), true);
+        made.sourceFile = f.name; save();
         pbToast(`Made a template from “${f.name}”`);
       };
       document.body.append(pick); pick.click();
@@ -1051,6 +1052,7 @@ function mxTplFromPrecedent(name, text) {
     .replace(/\s*\b(signed|executed|final|fully executed)\b\s*$/i, '').trim()
     .replace(/\b([a-z])/g, (_, c) => c.toUpperCase());
   const t = newTemplate(templateFrom(`${text || ''} ${name}`, clean), true, false);
+  t.sourceFile = name;
   /* The conversion shows its work. The value the precedent had stays
      beside the blank that replaced it, struck through as a tracked
      change — what was deleted to make each placeholder can be read, and
@@ -1731,7 +1733,8 @@ function templatePage(t, use = false, shell = false, frozen = false) {
   };
   /* a long name takes a second line rather than being cut off */
   const title = h('textarea', { class: 'mx-doc-title', rows: '1', placeholder: 'Untitled template', 'aria-label': 'Template name',
-    oninput: (e) => { t.name = e.target.value.replace(/\n/g, ' '); t.updated = mxNow(); save(); },
+    oninput: (e) => { t.name = e.target.value.replace(/\n/g, ' '); t.updated = mxNow(); save();
+      panelTitle.textContent = t.name || 'Untitled template'; },
     onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); docBody.querySelector('[contenteditable]')?.focus(); } } });
   title.value = t.name;
 
@@ -2120,33 +2123,67 @@ function templatePage(t, use = false, shell = false, frozen = false) {
         onfocus: () => focusChip(f.key), onblur: () => lit(f.key, false) });
       return h('label', { class: 'mx-f' }, h('div', { class: 'mx-f-top' }, h('span', { class: 'mx-f-l' }, f.label || 'Untitled field')), input);
     }
-    /* keeping the template: the field's name, and an example of what goes in it */
-    const hint = h('input', { class: 'mx-f-in mx-f-hint', 'data-key': f.key, value: f.hint || '', placeholder: 'An example value',
-      'aria-label': `Example for ${f.label}`,
-      oninput: (e) => { f.hint = e.target.value; t.updated = mxNow(); save(); },
-      onfocus: () => focusChip(f.key), onblur: () => lit(f.key, false) });
-    const name = h('input', { class: 'mx-f-l', value: f.label, 'aria-label': 'Field name', placeholder: 'Field name',
+    /* keeping the template: a card per field — its name, what kind of
+       thing fills it, and a menu for the rest */
+    const name = h('input', { class: 'mx-fld-l', value: f.label, 'aria-label': 'Field name', placeholder: 'Field name',
       oninput: (e) => { f.label = e.target.value; save(); paintChips(f.key); queueIdx(); },
       onfocus: () => focusChip(f.key), onblur: () => lit(f.key, false) });
-    return h('div', { class: 'mx-f is-keep' },
-      h('div', { class: 'mx-f-top' }, name,
-        h('button', { class: 'pbv-icon mx-f-del', type: 'button', 'aria-label': 'Delete field', 'data-tip': 'Delete Field', html: PBV_TRASH,
-          onclick: () => {
-            t.fields.splice(t.fields.indexOf(f), 1);
-            /* its blanks go back to being plain words */
-            for (const el of [...sheet.querySelectorAll(`.mx-chip[data-key="${f.key}"]`)]) {
-              /* the chip is contenteditable="false", so it answers closest()
-                 itself — the block it sits in is its parent's */
-              const host = el.parentElement?.closest('.mx-doc-h, .mx-doc-p');
-              el.replaceWith(f.label);
-              if (host?.__b) host.__b[host.tagName === 'H2' ? 'h' : 'p'] = read(host);
-            }
-            save(); paintFields(); paintProg(); paintIdx();
-          } })),
-      h('label', { class: 'mx-f-eg' }, h('span', {}, 'e.g.'), hint));
+    const ty = /date|day of term/i.test(f.key + ' ' + f.label) ? 'Date'
+      : /address|name|party|law|signatory|territory/i.test(f.key + ' ' + f.label) ? 'Text'
+      : /^[\d£$€]/.test(f.hint || '') || /\b(days?|months?|years?|fee|amount|number|cap|seats)\b/i.test(f.key + ' ' + f.label) ? 'Number'
+      : 'Text';
+    const dropField = () => {
+      t.fields.splice(t.fields.indexOf(f), 1);
+      /* its blanks go back to being plain words */
+      for (const el of [...sheet.querySelectorAll(`.mx-chip[data-key="${f.key}"]`)]) {
+        /* the chip is contenteditable="false", so it answers closest()
+           itself — the block it sits in is its parent's */
+        const host = el.parentElement?.closest('.mx-doc-h, .mx-doc-p');
+        el.replaceWith(f.label);
+        if (host?.__b) host.__b[host.tagName === 'H2' ? 'h' : 'p'] = read(host);
+      }
+      save(); paintFields(); paintProg(); paintIdx();
+    };
+    const dots = h('button', { class: 'pbv-icon mx-fld-dots', type: 'button', 'aria-label': 'Field options', 'data-tip': 'Field Options',
+      html: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>',
+      onclick: (e) => {
+        e.stopPropagation();
+        menu(dots, [
+          { label: 'Go to Blank', icon: 'look', run: () => focusChip(f.key) },
+          { rule: true },
+          { label: 'Delete Field', icon: 'trash', danger: true, run: dropField },
+        ]);
+      } });
+    return h('div', { class: 'mx-fld' },
+      h('div', { class: 'mx-fld-main' }, name, h('span', { class: 'mx-fld-ty' }, ty)),
+      dots);
   };
   const fieldsEl = h('div', { class: 'mx-fs' });
-  const paintFields = () => fieldsEl.replaceChildren(...t.fields.map(fieldRow));
+  const fldCap = h('h3', { class: 'mx-flds-cap' });
+  const paintFields = () => {
+    fieldsEl.replaceChildren(...t.fields.map(fieldRow));
+    fldCap.textContent = `Fields (${t.fields.length})`;
+  };
+  /* a new field joins the list and, if the caret was in a sentence, its
+     blank lands right there */
+  function addField() {
+    const f = { key: 'field_' + Math.random().toString(36).slice(2, 8), label: 'New field', hint: '' };
+    t.fields.push(f); t.updated = mxNow(); save();
+    if (last && docBody.contains(last.startContainer)) {
+      const host = (last.startContainer.nodeType === 1 ? last.startContainer : last.startContainer.parentElement)
+        ?.closest('.mx-doc-h, .mx-doc-p');
+      if (host?.isContentEditable) {
+        last.collapse(false);
+        last.insertNode(chip(f.key));
+        persist(host);
+      }
+    }
+    paintFields(); paintProg(); paintChips(f.key);
+    requestAnimationFrame(() => {
+      const inp = fieldsEl.lastElementChild?.querySelector('input');
+      inp?.focus(); inp?.select();
+    });
+  }
   /* values arrive one after another, so you can see where each one went */
   const putVals = (got) => {
     let n = 0;
@@ -2564,10 +2601,32 @@ function templatePage(t, use = false, shell = false, frozen = false) {
   /* The band sits over the whole page, outside the outline and the about
      panel, its tools gathered in the middle — the way Word's ribbon
      stands over the document rather than on it. */
+  /* the dropdowns Word keeps at the toolbar's left hand: the zoom, the
+     typeface and its size. The typeface and size are the template's own
+     setting — picked here, the whole document follows, and Word gets the
+     same when it is exported. */
+  const rbSel = (label, opts, value, pick) => {
+    const sel = h('select', { class: 'mx-rb-sel', 'aria-label': label, 'data-tip': label,
+      onchange: () => pick(sel.value) }, ...opts.map(([v, l]) => h('option', { value: v }, l)));
+    sel.value = value;
+    return sel;
+  };
+  const setSet = (k, v) => {
+    t.set = { ...Object.fromEntries(MX_SET_KEYS.map(x => [x, mxSet(t, x)])), [k]: v };
+    t.updated = mxNow(); save();
+    sheet.className = 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) + (cleanView ? ' is-clean' : '');
+  };
   const ribbon = !editable ? null : h('div', { class: 'mx-ribbon' },
     h('div', { class: 'mx-rb-band' },
       rbBtn('Undo', rbSvg(RB.undo), () => exec('undo')),
       rbBtn('Redo', rbSvg(RB.redo), () => exec('redo')),
+      rbSep(),
+      rbSel('Zoom', [['90', '90%'], ['100', '100%'], ['110', '110%'], ['125', '125%']], '100',
+        (v) => { sheet.style.zoom = +v / 100; }),
+      rbSel('Typeface', [['times', 'Times New Roman'], ['arial', 'Arial'], ['calibri', 'Calibri']], mxSet(t, 'face'),
+        (v) => setSet('face', v)),
+      rbSel('Text size', [['10', '10'], ['11', '11'], ['12', '12']], String(mxSet(t, 'size')),
+        (v) => setSet('size', v)),
       rbSep(),
       ...fmtBtns.map(x => x.el), hlBtn,
       rbSep(),
@@ -2739,13 +2798,26 @@ function templatePage(t, use = false, shell = false, frozen = false) {
     h('div', { class: 'mx-tpl-side-head' },
       h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, 'Fill in'), prog)),
     fieldsEl);
-  /* Filling one in, the blanks are the work, so they are listed first and
-     the outline sits under them. Keeping the template, they are not listed
-     at all: a blank belongs in the sentence it is part of, and the panel is
-     the document's shape. A new one is added from the plus over the sheet. */
+  /* ── the panel beside a template being written ────────────────
+     What the template is and the fields it carries — name, kind, the
+     document it came from, + Add, and a card per field — the way a
+     template editor's panel reads. The sections live on the sheet
+     itself. Filling one in keeps the blanks-first panel, and an older
+     version keeps the outline it always had. */
+  const panelTitle = h('h2', { class: 'mx-side-name' }, t.name || 'Untitled template');
+  const tplPanel = h('div', { class: 'mx-tpl-flds' },
+    panelTitle,
+    h('p', { class: 'mx-side-kind' }, t.kind || 'Template'),
+    t.sourceFile ? h('div', { class: 'mx-side-file' },
+      h('span', { class: 'mx-side-file-ic', 'aria-hidden': 'true',
+        html: '<svg viewBox="0 0 16 20" fill="none"><path d="M1.5 1.5h9l4 4v13h-13z" fill="#F4F2EF" stroke="#D8D3CC"/><path d="M4.5 8h7M4.5 10.5h7M4.5 13h7M4.5 15.5h5" stroke="#B5AFA6" stroke-width=".9" stroke-linecap="round"/></svg>' }),
+      h('span', { class: 'mx-side-file-n' }, t.sourceFile)) : null,
+    h('button', { class: 'mx-fld-add', type: 'button', onclick: () => addField() }, '+ Add'),
+    fldCap,
+    fieldsEl);
   const side = h('aside', { class: 'mx-tpl-side' }, back,
     use ? fillAsk() : null,
-    ...(use ? [fieldsBlock, outlineBlock] : [outlineBlock]));
+    ...(use ? [fieldsBlock, outlineBlock] : editable ? [tplPanel] : [outlineBlock]));
 
   /* beside a conversation there is far less room, so the panel starts
      narrower there and the document keeps the rest */
@@ -3259,21 +3331,17 @@ RENDER.template = (a) => {
   /* the newest version is the template itself; an older one is the
      record it left, and reads only */
   const latest = isCurrentVersion(a);
-  /* Full screen the template opens as a thing to read: nothing editable,
-     no band, until Edit is pressed — then the editor's band comes up over
-     the document, the way Word opens one. Beside its conversation it is
-     already being worked on, so it is editable from the start. */
-  const editing = state.view === 'thread' || MX.templates.editing === t.id;
+  /* The newest version opens as its editor, the way Word opens a
+     document: the band over the page, everything typable, no mode to
+     enter first. Only an older version reads as a record. */
   return {
-    body: templatePage(latest ? t : versionOf(a).snap, false, true, !latest || !editing),
-    edit: latest && state.view !== 'thread' ? (MX.templates.editing === t.id
-      ? { label: 'Done', title: 'Put the editor away',
-          run: () => { MX.templates.editing = null; openArtifact(a, { full: true }); } }
-      /* Edit is both edits at once: the template opens beside its
-         conversation, the band comes up over it, and either hand works —
-         type on the document, or ask the chat to change it */
-      : { label: 'Edit', title: 'Edit this template — on the page, or through its conversation',
-          run: () => { MX.templates.editing = null; mxTplEditInChat(t); } }) : null,
+    body: templatePage(latest ? t : versionOf(a).snap, false, true, !latest),
+    /* Edit on the header is the other hand: the same template beside its
+       conversation, for asking rather than typing */
+    edit: latest && state.view !== 'thread'
+      ? { label: 'Edit', title: 'Edit this template through its conversation',
+          run: () => mxTplEditInChat(t) }
+      : null,
     /* opened from the list, the way out is back to it; beside a chat, the
        template keeps its mark and the panel's own close */
     lead: [state.view === 'templates'
