@@ -2163,7 +2163,10 @@ function templatePage(t, use = false, shell = false, frozen = false) {
         'aria-label': f.label,
         oninput: (e) => { vals[f.key] = e.target.value; paintChips(f.key, true); paintProg(); queueIdx(); },
         onfocus: () => focusChip(f.key), onblur: () => lit(f.key, false) });
-      return h('label', { class: 'mx-f' }, h('div', { class: 'mx-f-top' }, h('span', { class: 'mx-f-l' }, f.label || 'Untitled field')), input);
+      /* pressing the card takes the document to its blank, as the
+         template's own field cards do */
+      return h('label', { class: 'mx-f', onclick: () => focusChip(f.key) },
+        h('div', { class: 'mx-f-top' }, h('span', { class: 'mx-f-l' }, f.label || 'Untitled field')), input);
     }
     /* keeping the template: a card per field — its name, what kind of
        thing fills it, and a menu for the rest */
@@ -2607,9 +2610,14 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      header, so it keeps the bar. */
   const inShell = shell && editable;
   const shellTools = inShell ? [find, rbN, showBtn, trackBtn, moreBtn] : null;
+  /* Filling one in reads the same way: nothing over the paper either,
+     its search and its folding carried by the page's own header beside
+     Create Draft. Only an old version, which has no header of its own,
+     keeps the bar. */
+  const bare = inShell || use;
   if (!inShell && editable) for (const el of [rbN, showBtn, trackBtn, moreBtn]) docBar.insertBefore(el, find);
 
-  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) }, inShell ? null : docBar,
+  const sheet = h('article', { class: 'mx-doc' + (use ? ' is-use' : '') + mxSetClasses(t) }, bare ? null : docBar,
     h('div', { class: 'mx-doc-in' },
       editable ? title : h('h1', { class: 'mx-doc-title' }, t.name || 'Untitled template'), docBody, nomatch));
   /* a blank in the document and its field find each other */
@@ -2755,8 +2763,8 @@ function templatePage(t, use = false, shell = false, frozen = false) {
       h('span', { class: 'pb-grow' }), hideBtn),
     idxList);
   const fieldsBlock = h('div', { class: 'mx-tpl-fields' },
-    h('div', { class: 'mx-tpl-side-head' },
-      h('span', { class: 'mx-tpl-side-t' }, h('span', { class: 'pbv-cap' }, 'Fill in'), prog)),
+    h('div', { class: 'mx-flds-head' }, h('h3', { class: 'mx-flds-cap' }, 'Fill in'),
+      h('span', { class: 'pb-grow' }), prog),
     fieldsEl);
   /* ── the panel beside a template being written ────────────────
      What the template is and the fields it carries — name, kind, the
@@ -2768,13 +2776,15 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      carries only what the document cannot: where it came from, and its
      fields */
   const panelTitle = h('span', { hidden: true });
-  const tplPanel = h('div', { class: 'mx-tpl-flds' },
+  /* built only where it is used: it holds the same fields element the
+     fill-in panel does, and whichever is built last would take it */
+  const tplPanel = !editable ? null : h('div', { class: 'mx-tpl-flds' },
     h('div', { class: 'mx-flds-head' }, fldCap, h('span', { class: 'pb-grow' }),
       h('button', { class: 'pbv-add-fb mx-fld-add', type: 'button', onclick: () => addField() }, 'Add field')),
     fieldsEl);
   const side = h('aside', { class: 'mx-tpl-side' }, back,
     use ? fillAsk() : null,
-    ...(use ? [fieldsBlock, outlineBlock] : editable ? [tplPanel] : [outlineBlock]));
+    ...(use ? [fieldsBlock] : editable ? [tplPanel] : [outlineBlock]));
 
   /* beside a conversation there is far less room, so the panel starts
      narrower there and the document keeps the rest */
@@ -2852,6 +2862,8 @@ function templatePage(t, use = false, shell = false, frozen = false) {
               h('span', { class: 'mx-dot' }, 'v' + mxTplVer(t)),
               h('span', { class: 'mx-dot' }, `Used ${mxPlural(t.used, 'time')}`)),
         h('span', { class: 'pb-grow' }),
+        use ? find : null,
+        use ? foldAllBtn : null,
         use
           ? h('button', { class: 'btn btn--primary', type: 'button', onclick: draft }, 'Create Draft')
           : null),
