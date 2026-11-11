@@ -1908,10 +1908,10 @@ function templatePage(t, use = false, shell = false, frozen = false) {
       dots);
   };
   const fieldsEl = h('div', { class: 'mx-fs' });
-  const fldCap = h('h3', { class: 'mx-flds-cap' });
+  const fldCap = h('h3', { class: 'mx-flds-cap pbv-cap' });
   const paintFields = () => {
     fieldsEl.replaceChildren(...t.fields.map(fieldRow));
-    fldCap.textContent = `Fields (${t.fields.length})`;
+    fldCap.textContent = 'Fields';
   };
   /* values arrive one after another, so you can see where each one went */
   const putVals = (got) => {
@@ -2265,7 +2265,7 @@ function templatePage(t, use = false, shell = false, frozen = false) {
       h('span', { class: 'pb-grow' }), hideBtn),
     idxList);
   const fieldsBlock = h('div', { class: 'mx-tpl-fields' },
-    h('div', { class: 'mx-flds-head' }, h('h3', { class: 'mx-flds-cap' }, 'Fill in'),
+    h('div', { class: 'mx-flds-head' }, h('h3', { class: 'mx-flds-cap pbv-cap' }, 'Fill in'),
       h('span', { class: 'pb-grow' }), prog),
     fieldsEl);
   /* ── the panel beside a template being written ────────────────
