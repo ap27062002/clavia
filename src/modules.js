@@ -1037,6 +1037,24 @@ function mxTplAskSet(t, text, files) {
   ];
 }
 
+/* ── what a blank holds, by the kind of thing it is ───────────
+   A conversion asks which kinds of information to take out, the way a
+   Word add-in does. A field is read into one of them by its name, and
+   anything that is none of them is a term of the deal — the fee, the
+   notice period, the governing law — which is what a template is for. */
+const MX_KINDS = [
+  { key: 'person',  label: 'Person names',         mark: '[Person name]',           re: /signator|contact person|attention|witness/i },
+  { key: 'company', label: 'Companies',            mark: '[Company]',               re: /counterpart|customer|supplier|reseller|client|company|vendor|party\b/i },
+  { key: 'place',   label: 'Location information', mark: '[Location information]',  re: /address|premises|territor|place|city|country/i },
+  { key: 'contact', label: 'Contact information',  mark: '[Contact information]',   re: /email|phone|telephone|mobile|fax/i },
+  { key: 'url',     label: 'URLs',                 mark: '[URL]',                   re: /url|website|web site|domain|link/i },
+  { key: 'date',    label: 'Dates',                mark: '[Date]',                  re: /date|day of|effective|expiry|commencement/i },
+  { key: 'money',   label: 'Financial information', mark: '[Financial information]', re: /fee|amount|price|cost|discount|value|charge|seats|payment/i },
+  { key: 'govid',   label: 'Government IDs',       mark: '[Government ID]',         re: /\bcin\b|registration|incorporat|\bvat\b|\bgst\b|\btax\b|licen[cs]e no|identification/i },
+  { key: 'terms',   label: 'Deal terms',           mark: '[Term]',                  re: /./ },
+];
+const mxFieldKind = (f) => (MX_KINDS.find(k => k.re.test(`${f.key} ${f.label}`)) || MX_KINDS[MX_KINDS.length - 1]).key;
+
 /* ── a precedent handed over, turned into a template ──────────
    Reached from Build with AI, by attaching the document. The document
    decides everything but one thing. Its sections become the template's
@@ -1055,7 +1073,8 @@ function mxTplFromPrecedent(name, text) {
   t.sourceFile = name;
   /* The conversion makes placeholders and nothing else: where the
      precedent named a party, a date or an amount, the template carries
-     a blank. Its wording is left exactly as the document had it. */
+     a blank. Its wording is left exactly as the document had it. Which
+     kinds become blanks is answered first, so this waits for it. */
   save();
   mxTplEditInChat(t, mxTplAskBlanks(t, name, text), true);
 }
@@ -1071,15 +1090,36 @@ function mxTplAskBlanks(t, name, text) {
     size: '11',
   };
   queueMicrotask(() => chatAsk({
-    questions: [{ key: 'blanks', header: MX_SET.blanks.label, question: MX_SET.blanks.ask,
-      options: MX_SET.blanks.options, def: MX_SET.blanks.def }],
+    questions: [
+      /* which kinds of information come out, the way a Word add-in asks it */
+      { key: 'kinds', multi: true, done: 'Convert', header: 'Placeholders',
+        question: 'Which kinds of information should become placeholders?',
+        options: MX_KINDS.map(k => ({ key: k.key, label: k.label, desc: k.mark })) },
+      { key: 'blanks', header: MX_SET.blanks.label, question: MX_SET.blanks.ask,
+        options: MX_SET.blanks.options, def: MX_SET.blanks.def },
+    ],
     onDone: (answers) => {
       t.set = { ...read, blanks: answers.blanks?.key || MX_SET.blanks.def };
+      /* a field whose kind was not asked for keeps what the precedent
+         said: the words go back into the document and the field goes */
+      const want = new Set(answers.kinds?.keys || MX_KINDS.map(k => k.key));
+      const out = t.fields.filter(f => !want.has(mxFieldKind(f)));
+      for (const f of out) {
+        const was = f.hint || mxFieldLabel(t, f.key);
+        for (const b of t.body) {
+          const k2 = b.h !== undefined ? 'h' : 'p';
+          b[k2] = b[k2].split(`{{${f.key}}}`).join(was);
+        }
+      }
+      t.fields = t.fields.filter(f => want.has(mxFieldKind(f)));
       t.updated = mxNow(); save();
       mxTplEnsureVersions(t);
-      say('user', answers.blanks?.text
-        ? `blanks: “${answers.blanks.text}”`
-        : MX_SET.blanks.options.find(o => o.key === t.set.blanks).label + '.');
+      const kept = MX_KINDS.filter(k => want.has(k.key)).map(k => k.label.toLowerCase());
+      const said = kept.length === MX_KINDS.length ? 'Every kind'
+        : kept.length > 1 ? kept.slice(0, -1).join(', ') + ' and ' + kept[kept.length - 1]
+        : kept[0] || 'nothing';
+      say('user', `${said}, in `
+        + MX_SET.blanks.options.find(o => o.key === t.set.blanks).label.toLowerCase() + '.');
       for (const m of mxTplBuiltIntro(t, null, [name]).slice(1)) say('bot', m.answer, { ...m, text: m.answer, thinking: false });
       paintThread();
       queueMicrotask(() => openArtifact(mxTplArtifact(t)));
@@ -1088,12 +1128,12 @@ function mxTplAskBlanks(t, name, text) {
   return [
     { role: 'user', text: text || `Turn ${name} into a template with placeholders.`, files: [{ name }] },
     { role: 'bot', cites: null, artifact: null,
-      answer: `Read ${name}. Its sections become the template's sections, and the deal-specific terms `
-        + '— names, dates, amounts — become placeholders. Nothing else is changed: the wording stays '
-        + 'exactly as the document has it, and how it is set stays the document’s own — '
+      answer: `Read ${name}. Its sections become the template's sections, and nothing in the wording `
+        + 'changes: what it says stays exactly as the document has it, set the way the document is set — '
         + `${MX_SET.layout.options.find(o => o.key === read.layout).label.toLowerCase()}, `
         + `${MX_SET.face.options.find(o => o.key === read.face).label} ${read.size} pt. `
-        + 'One thing the document cannot say is how its blanks should be marked.',
+        + 'Two things are yours to say: which kinds of information should come out as placeholders, '
+        + 'and how those placeholders should be marked.',
       steps: [{ source: 'internal', query: `Read ${name}`,
         rows: [{ title: name, meta: 'precedent' }] }] },
   ];
@@ -1225,7 +1265,8 @@ function mxTplAbout(t, onHide) {
 
 /* what goes either side of a blank, in the file as on the page. The
    third slot says the name is underlined rather than bracketed. */
-const MX_BLANK_MARK = { square: ['[', ']'], angle: ['<', '>'], curly: ['{', '}'], rule: ['', '', true] };
+const MX_BLANK_MARK = { square: ['[', ']'], angle: ['<', '>'], curly: ['{', '}'],
+  dsquare: ['[[', ']]'], dangle: ['<<', '>>'], dcurly: ['{{', '}}'], rule: ['', '', true] };
 
 /* ── Open in Word ─────────────────────────────────────────────
  The template as it stands, filled where it is filled, set the way it
@@ -1326,6 +1367,9 @@ const MX_SET = {
       { key: 'square', label: '[Square brackets]', desc: 'The usual mark for something still to be filled in.' },
       { key: 'angle', label: '<Angle brackets>', desc: 'Reads as a field rather than as drafting left open.' },
       { key: 'curly', label: '{Curly braces}', desc: 'What a mail merge expects to find.' },
+      { key: 'dsquare', label: '[[Double square]]', desc: 'Harder to mistake for drafting in square brackets.' },
+      { key: 'dangle', label: '<<Double angled>>', desc: 'What a mail merge field looks like in Word.' },
+      { key: 'dcurly', label: '{{Double curly}}', desc: 'What most document assembly tools expect.' },
       { key: 'rule', label: 'A ruled line', desc: 'A line to write on, for anything printed and signed by hand.' },
     ] },
   face: {

@@ -564,6 +564,12 @@
 .is-blanks-angle .mx-chip::after { content: '>'; }
 .is-blanks-curly .mx-chip::before { content: '{'; }
 .is-blanks-curly .mx-chip::after { content: '}'; }
+.is-blanks-dsquare .mx-chip::before { content: '[['; }
+.is-blanks-dsquare .mx-chip::after { content: ']]'; }
+.is-blanks-dangle .mx-chip::before { content: '<<'; }
+.is-blanks-dangle .mx-chip::after { content: '>>'; }
+.is-blanks-dcurly .mx-chip::before { content: '{{'; }
+.is-blanks-dcurly .mx-chip::after { content: '}}'; }
 .mx-chip::before, .mx-chip::after { color: var(--text-faint); }
 /* filled in, it is a value and not a blank any more */
 .mx-chip.is-set::before, .mx-chip.is-set::after { content: none; }
