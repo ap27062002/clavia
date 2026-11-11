@@ -1060,6 +1060,10 @@ function mxTplFromPrecedent(name, text) {
      words. The counterparty is read off the file's name; the rest are
      the values the document carried (scripted: the field's example). */
   const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  /* what a change did and why it did it, said the way a reviewer would
+     say it — it rides on the mark, so the card can show both */
+  const mk = (tag, cls, act, why, s) =>
+    `<${tag} class="${cls}" data-act="${esc(act)}" data-why="${esc(why)}">${s}</${tag}>`;
   const first = clean.split(' ')[0];
   const co = first && !/^(mutual|one|two|way|nda|msa|dpa|order|form|master|services?|agreement|notice|reseller|non|renewal|data|processing|short|standard)$/i.test(first)
     ? first : null;
@@ -1069,7 +1073,10 @@ function mxTplFromPrecedent(name, text) {
     const k2 = b.h !== undefined ? 'h' : 'p';
     b[k2] = b[k2].replace(/\{\{([a-z0-9_]+)\}\}/gi, (m, k) => {
       const v = was(k);
-      return v ? `<del class="clavia">${esc(v)}</del>${m}` : m;
+      if (!v) return m;
+      const label = t.fields.find(x => x.key === k)?.label || k;
+      return mk('del', 'clavia', `Make ${label} a blank`,
+        `This was ${v} in the precedent — a term of that deal, not of the template.`, esc(v)) + m;
     });
   }
   /* Not only the placeholders: the precedent's own drafting is brought
@@ -1077,17 +1084,22 @@ function mxTplFromPrecedent(name, text) {
      struck through, what our paper says inserted beside it — and a
      deal-specific sentence that has no place in a template struck out
      whole. (Scripted: the kinds of edit a conversion always makes.) */
-  const DEL = (s) => `<del class="clavia">${s}</del>`, INS = (s) => `<ins class="clavia">${s}</ins>`;
+  const pair = (act, why, was1, now) =>
+    mk('del', 'clavia', act, why, was1) + mk('ins', 'clavia', act, why, now);
   let rewords = 0;
   for (const b of t.body) {
     if (b.h !== undefined || rewords >= 2 || !/\bwill\b/.test(b.p)) continue;
-    b.p = b.p.replace(/\bwill\b/, DEL('shall') + INS('will'));
+    b.p = b.p.replace(/\bwill\b/, pair('Use plain obligation wording',
+      'Our house style says “will”; “shall” reads as older drafting and means the same.', 'shall', 'will'));
     rewords++;
   }
   const days = t.body.find(b => b.p !== undefined && /\b30 days\b/.test(b.p));
-  if (days) days.p = days.p.replace(/\b30 days\b/, DEL('60 days') + INS('30 days'));
+  if (days) days.p = days.p.replace(/\b30 days\b/, pair('Bring the notice period to ours',
+    'The precedent allowed 60 days; our standard notice period is 30.', '60 days', '30 days'));
   const liab = t.body.find(b => b.p !== undefined && /liab/i.test(b.p));
-  if (liab) liab.p += DEL(` Liability for loss of ${esc(co || 'the customer')}’s data is unlimited.`);
+  if (liab) liab.p += mk('del', 'clavia', 'Strike the uncapped data liability',
+    `This was negotiated for ${co || 'that counterparty'} alone and has no place in a template.`,
+    ` Liability for loss of ${esc(co || 'the customer')}’s data is unlimited.`);
   save();
   mxTplEditInChat(t, mxTplAskBlanks(t, name, text), true);
 }
@@ -1470,9 +1482,15 @@ function mxRichRead(el) {
     }
     const inner = ser(n);
     if (!tag || !inner) return inner;
-    /* a tracked edit keeps whose it is: Clavia's (a conversion's) or yours */
-    const by = tag === 'ins' || tag === 'del' ? ` class="${n.classList.contains('clavia') ? 'clavia' : 'mine'}"` : '';
-    return `<${tag}${by}>${inner}</${tag}>`;
+    /* a tracked edit keeps whose it is — Clavia's (a conversion's) or
+       yours — and, if Clavia made it, what it did and why */
+    let at = '';
+    if (tag === 'ins' || tag === 'del') {
+      at = ` class="${n.classList.contains('clavia') ? 'clavia' : 'mine'}"`;
+      if (n.dataset.act) at += ` data-act="${mxRichEsc(n.dataset.act)}"`;
+      if (n.dataset.why) at += ` data-why="${mxRichEsc(n.dataset.why)}"`;
+    }
+    return `<${tag}${at}>${inner}</${tag}>`;
   }).join('');
   return ser(el);
 }
@@ -1488,11 +1506,16 @@ function mxRichParse(text) {
       if (c.nodeType !== 1) { c.remove(); continue; }
       clean(c);
       if (MX_RICH[c.tagName]) {
-        const clavia = (c.tagName === 'INS' || c.tagName === 'DEL') && c.classList.contains('clavia');
+        const mark = c.tagName === 'INS' || c.tagName === 'DEL';
+        const clavia = mark && c.classList.contains('clavia');
+        const act = mark ? c.getAttribute('data-act') : null;
+        const why = mark ? c.getAttribute('data-why') : null;
         for (const a of [...c.attributes]) c.removeAttribute(a.name);
-        if (c.tagName === 'INS' || c.tagName === 'DEL') {
+        if (mark) {
           c.className = clavia ? 'clavia' : 'mine';
           c.title = clavia ? 'Clavia’s edit' : 'Your edit';
+          if (act) c.dataset.act = act;
+          if (why) c.dataset.why = why;
         }
       } else c.replaceWith(...c.childNodes);
     }
@@ -2545,7 +2568,16 @@ function templatePage(t, use = false, shell = false, frozen = false) {
           : h('span', { class: 'mx-cm-logo', html: rbSvg(RB.track) }),
         h('span', { class: 'mx-cm-who' }, clavia ? 'Clavia' : 'You'),
         h('span', { class: 'mx-cm-from' }, ref)),
-      h('div', { class: 'mx-cm-b' }, h('p', { class: 'mx-cm-text', html: body })),
+      h('div', { class: 'mx-cm-b' },
+        /* what the change does, then the words themselves, then why —
+           a reviewer's three lines */
+        g.m.dataset.act ? h('p', { class: 'mx-cm-act' }, g.m.dataset.act) : null,
+        h('p', { class: 'mx-cm-text', html: body }),
+        g.m.dataset.why
+          ? h('div', { class: 'mx-cm-just' },
+              h('span', { class: 'mx-cm-just-h' }, 'Justification'),
+              h('p', {}, g.m.dataset.why))
+          : null),
       h('div', { class: 'mx-cm-f' },
         h('button', { class: 'mx-cm-rej', type: 'button',
           onclick: (e) => { e.stopPropagation(); answerGroup(g, 'reject'); } }, 'Reject'),
@@ -2804,16 +2836,17 @@ function templatePage(t, use = false, shell = false, frozen = false) {
      template editor's panel reads. The sections live on the sheet
      itself. Filling one in keeps the blanks-first panel, and an older
      version keeps the outline it always had. */
-  const panelTitle = h('h2', { class: 'mx-side-name' }, t.name || 'Untitled template');
+  /* the name is the document's own, at the head of the page; the panel
+     carries only what the document cannot: where it came from, and its
+     fields */
+  const panelTitle = h('span', { hidden: true });
   const tplPanel = h('div', { class: 'mx-tpl-flds' },
-    panelTitle,
-    h('p', { class: 'mx-side-kind' }, t.kind || 'Template'),
     t.sourceFile ? h('div', { class: 'mx-side-file' },
       h('span', { class: 'mx-side-file-ic', 'aria-hidden': 'true',
         html: '<svg viewBox="0 0 16 20" fill="none"><path d="M1.5 1.5h9l4 4v13h-13z" fill="#F4F2EF" stroke="#D8D3CC"/><path d="M4.5 8h7M4.5 10.5h7M4.5 13h7M4.5 15.5h5" stroke="#B5AFA6" stroke-width=".9" stroke-linecap="round"/></svg>' }),
       h('span', { class: 'mx-side-file-n' }, t.sourceFile)) : null,
-    h('button', { class: 'mx-fld-add', type: 'button', onclick: () => addField() }, '+ Add'),
-    fldCap,
+    h('div', { class: 'mx-flds-head' }, fldCap, h('span', { class: 'pb-grow' }),
+      h('button', { class: 'pbv-add-fb mx-fld-add', type: 'button', onclick: () => addField() }, 'Add field')),
     fieldsEl);
   const side = h('aside', { class: 'mx-tpl-side' }, back,
     use ? fillAsk() : null,

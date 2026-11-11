@@ -422,8 +422,8 @@
 /* the document: a sheet, in the playbook sheet's type */
 .mx-doc {
   max-width: 754px; margin: 0 auto;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
-  box-shadow: 0 1px 2px rgba(20,20,19,.03), 0 12px 32px -24px rgba(20,20,19,.18);
+  background: #fff; border: 1px solid var(--line-soft); border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(20,20,19,.07), 0 18px 40px -28px rgba(20,20,19,.3);
 }
 /* ── the bar over the sheet ──
    Slim, and its tools end where the text below ends. Once the page is
@@ -440,7 +440,7 @@
      them do not, which is the thing you actually see. */
   height: 44px; padding: 0 calc(var(--mx-margin) - 7.5px) 0 var(--mx-margin);
   background: rgba(255,255,255,.95); backdrop-filter: blur(6px);
-  border-bottom: 1px solid var(--line-soft); border-radius: 14px 14px 0 0;
+  border-bottom: 1px solid var(--line-soft); border-radius: 3px 3px 0 0;
   transition: box-shadow 220ms var(--ease);
 }
 .mx-doc-bar.is-stuck { box-shadow: 0 12px 16px -14px rgba(20,20,19,.22); }
@@ -533,7 +533,7 @@
    opens on click to its Accept and Reject. Show changes on the band
    puts the rail up and away. */
 .mx-tpl-doc.has-cards { display: flex; align-items: flex-start; justify-content: center; gap: 14px; }
-.mx-tpl-doc.has-cards .mx-doc { flex: 0 1 754px; min-width: 0; margin: 0; }
+.mx-tpl-doc.has-cards .mx-doc { flex: 1 1 754px; min-width: 360px; margin: 0; }
 .mx-tpl-doc:not(.has-cards) .mx-cmts { display: none; }
 .mx-cmts {
   flex: 0 0 258px; min-width: 0; position: sticky; top: 0;
@@ -571,6 +571,11 @@
   text-decoration: underline; text-decoration-color: rgba(61,95,168,.5); text-underline-offset: 3px;
 }
 .mx-cm-text del + ins { margin-left: .25em; }
+.mx-cm-act { margin: 0 0 6px; font-size: 13px; font-style: italic; color: var(--text); }
+.mx-cm-just { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line-soft); }
+.mx-cm-just-h { display: block; font-size: 12px; font-weight: 600; color: var(--text-soft); margin-bottom: 2px; }
+.mx-cm-just p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-soft); }
+.mx-cm:not(.is-active) .mx-cm-just { display: none; }
 .mx-cm-text ins.mx-cm-chip {
   background: none; text-decoration: none;
   border: 1px dashed var(--line-strong); border-radius: 5px; padding: 0 4px;
@@ -596,23 +601,15 @@
    What it is, the document it came from, and its fields as cards —
    the template editor's panel, not the document's outline. */
 .mx-tpl-flds { display: flex; flex-direction: column; min-width: 0; }
-.mx-side-name {
-  margin: 14px 0 2px; font-family: 'Cormorant Garamond', Georgia, serif;
-  font-size: 27px; font-weight: 600; line-height: 1.15; color: var(--text); overflow-wrap: break-word;
-}
-.mx-side-kind { margin: 0 0 14px; font-size: 13px; color: var(--text-soft); }
 .mx-side-file {
-  display: flex; align-items: center; gap: 9px; padding: 10px 12px; margin: 0 0 10px;
+  display: flex; align-items: center; gap: 9px; padding: 10px 12px; margin: 4px 0 14px;
   background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
 }
 .mx-side-file-ic, .mx-side-file-ic svg { width: 15px; height: 19px; flex: none; display: block; }
 .mx-side-file-n { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mx-fld-add {
-  appearance: none; width: 100%; height: 36px; margin: 0 0 18px; border: 0; border-radius: 10px;
-  background: #EFEDE9; color: var(--text); font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer;
-}
-.mx-fld-add:hover { background: #E8E5E0; }
-.mx-flds-cap { margin: 0 0 8px; font-size: 13.5px; font-weight: 600; color: var(--text); }
+.mx-flds-head { display: flex; align-items: center; gap: 8px; margin: 2px 0 10px; }
+.mx-fld-add { flex: none; font-size: 13px; }
+.mx-flds-cap { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--text); }
 .mx-tpl-flds .mx-fs { display: flex; flex-direction: column; gap: 8px; }
 .mx-fld {
   display: flex; align-items: center; gap: 6px; padding: 10px 8px 10px 14px;
@@ -665,7 +662,10 @@
    A template is a document somebody will open in Word, so what is on
    screen is the page that comes out of it: the paper it is for, the
    face it is set in, the size it is set at, and how it is laid out. */
-.mx-doc { --mx-page: 794px; --mx-margin: 96px; }
+/* a page's margins, which give way before its words do: a narrow column
+   (the panel open, the cards out) keeps reading as a page rather than
+   breaking every heading over three lines */
+.mx-doc { --mx-page: 794px; --mx-margin: clamp(26px, 9%, 96px); }
 /* beside a conversation the page cannot afford an inch of white on each
    side, so the margin narrows and everything set from it comes with it */
 .mx-tpl.is-in-chat .mx-doc { --mx-margin: 48px; }
@@ -699,7 +699,7 @@
 /* the page: a sheet with a hairline and a one-inch margin, square at the
    corners, so it reads as paper and not as a card */
 .mx-doc { border-radius: 4px; }
-.mx-doc .mx-doc-bar { border-radius: 4px 4px 0 0; }
+.mx-doc .mx-doc-bar { border-radius: 3px 3px 0 0; }
 .mx-doc-in { padding: var(--mx-margin) var(--mx-margin) calc(var(--mx-margin) * 1.2); }
 .mx-doc-in, .mx-doc-in .mx-doc-p, .mx-doc-in .mx-doc-h, .mx-doc-in .mx-doc-title { font-family: inherit; }
 .mx-doc-p { font-size: var(--mx-pt, 14.7px); line-height: 1.5; margin: 0 0 11px; color: var(--text); outline: 0; }
